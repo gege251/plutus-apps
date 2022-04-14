@@ -2462,9 +2462,7 @@
                 )
               )
               (termbind
-                (strict)
-                (vardecl minAdaTxOut (con integer))
-                (con integer 2000000)
+                (strict) (vardecl minTxOut (con integer)) (con integer 2000000)
               )
               (termbind
                 (strict)
@@ -8644,6 +8642,10 @@
                                                                                                                                               ]
                                                                                                                                               minAdaTxOut
                                                                                                                                             ]
+<<<<<<< HEAD
+=======
+                                                                                                                                            minTxOut
+>>>>>>> Add AdjustUnbalancedTx effect
                                                                                                                                           ]
                                                                                                                                         ]
                                                                                                                                         True
@@ -15638,7 +15640,7 @@
                                                                                                                                                                                             emptyByteString
                                                                                                                                                                                           ]
                                                                                                                                                                                         ]
-                                                                                                                                                                                        minAdaTxOut
+                                                                                                                                                                                        minTxOut
                                                                                                                                                                                       ]
                                                                                                                                                                                     ]
                                                                                                                                                                                   ]
