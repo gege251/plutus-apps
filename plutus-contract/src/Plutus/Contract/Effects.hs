@@ -107,7 +107,7 @@ import Plutus.ChainIndex.Tx (ChainIndexTx (_citxTxId))
 import Plutus.ChainIndex.Types (Tip, TxOutStatus, TxStatus)
 import Plutus.Contract.CardanoAPI (ToCardanoError)
 import Prettyprinter (Pretty (pretty), hsep, indent, viaShow, vsep, (<+>))
-import Wallet.API (WalletAPIError)
+import Wallet.Error (WalletAPIError)
 import Wallet.Types (ContractInstanceId, EndpointDescription, EndpointValue)
 
 -- | Requests that 'Contract's can make

@@ -17,6 +17,7 @@ module Wallet.Emulator.Stream(
     , initialDist
     , initialState
     , slotConfig
+    , protocolParams
     , runTraceStream
     -- * Stream manipulation
     , takeUntilSlot
@@ -26,6 +27,7 @@ module Wallet.Emulator.Stream(
     , foldEmulatorStreamM
     ) where
 
+import Cardano.Api.Shelley (ProtocolParameters)
 import Control.Foldl qualified as L
 import Control.Lens (filtered, makeLenses, preview, view)
 import Control.Monad.Freer (Eff, Member, interpret, reinterpret, run, subsume, type (~>))
@@ -48,6 +50,7 @@ import Ledger.Slot (Slot)
 import Ledger.Tx (CardanoTx (..), Tx)
 import Ledger.Value (Value)
 import Plutus.ChainIndex (ChainIndexError)
+import Plutus.Contract.ProtocolParameters ()
 import Streaming (Stream)
 import Streaming qualified as S
 import Streaming.Prelude (Of)
@@ -119,7 +122,7 @@ runTraceStream :: forall effs.
             , Error EmulatorRuntimeError
             ] ()
     -> Stream (Of (LogMessage EmulatorEvent)) (Eff effs) (Maybe EmulatorErr, EmulatorState)
-runTraceStream conf@EmulatorConfig{_slotConfig} =
+runTraceStream conf@EmulatorConfig{_slotConfig, _protocolParams} =
     fmap (first (either Just (const Nothing)))
     . S.hoist (pure . run)
     . runStream @(LogMessage EmulatorEvent) @_ @'[]
@@ -131,7 +134,7 @@ runTraceStream conf@EmulatorConfig{_slotConfig} =
     . wrapError ChainIndexErr
     . wrapError AssertionErr
     . wrapError InstanceErr
-    . EM.processEmulated _slotConfig
+    . EM.processEmulated _slotConfig _protocolParams
     . subsume
     . subsume @(State EmulatorState)
     . raiseEnd
@@ -140,6 +143,7 @@ data EmulatorConfig =
     EmulatorConfig
         { _initialChainState :: InitialChainState -- ^ State of the blockchain at the beginning of the simulation. Can be given as a map of funds to wallets, or as a block of transactions.
         , _slotConfig        :: SlotConfig -- ^ Set the start time of slot 0 and the length of one slot
+        , _protocolParams    :: ProtocolParameters
         } deriving (Eq, Show)
 
 type InitialChainState = Either InitialDistribution [Tx]
@@ -157,6 +161,7 @@ instance Default EmulatorConfig where
   def = EmulatorConfig
           { _initialChainState = Left defaultDist
           , _slotConfig = def
+          , _protocolParams = def
           }
 
 initialState :: EmulatorConfig -> EM.EmulatorState

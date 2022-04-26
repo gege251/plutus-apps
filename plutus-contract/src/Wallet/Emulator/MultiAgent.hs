@@ -17,6 +17,7 @@
 {-# OPTIONS_GHC -Wno-overlapping-patterns #-}
 module Wallet.Emulator.MultiAgent where
 
+import Cardano.Api.Shelley (ProtocolParameters)
 import Control.Lens (AReview, Getter, Lens', Prism', anon, at, folded, makeLenses, prism', reversed, review, to, unto,
                      view, (&), (.~), (^.), (^..))
 import Control.Monad (join)
@@ -24,6 +25,7 @@ import Control.Monad.Freer (Eff, Member, Members, interpret, send, subsume, type
 import Control.Monad.Freer.Error (Error, throwError)
 import Control.Monad.Freer.Extras.Log (LogMessage, LogMsg, LogObserve, handleObserveLog, mapLog)
 import Control.Monad.Freer.Extras.Modify (handleZoomedState, raiseEnd, writeIntoState)
+import Control.Monad.Freer.Reader (Reader, runReader)
 import Control.Monad.Freer.State (State, get)
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Map (Map)
@@ -188,7 +190,8 @@ handleMultiAgentEffects ::
     -> Eff (EmulatedWalletEffects' effs)
     ~> Eff effs
 handleMultiAgentEffects wallet =
-    interpret (raiseWallet @(LogMsg T.Text) wallet)
+    interpret (raiseWallet @(Reader ProtocolParameters) wallet)
+        . interpret (raiseWallet @(LogMsg T.Text) wallet)
         . interpret (raiseWallet @(LogMsg TxBalanceMsg) wallet)
         . interpret (raiseWallet @(LogMsg RequestHandlerLogMsg) wallet)
         . interpret (raiseWallet @(LogObserve (LogMessage T.Text)) wallet)
@@ -353,8 +356,8 @@ handleMultiAgentControl = interpret $ \case
 
 handleMultiAgent
     :: forall effs. Members MultiAgentEffs effs
-    => Eff (MultiAgentEffect ': effs) ~> Eff effs
-handleMultiAgent = interpret $ \case
+    => ProtocolParameters -> Eff (MultiAgentEffect ': effs) ~> Eff effs
+handleMultiAgent pparams = interpret $ \case
     -- TODO: catch, log, and rethrow wallet errors?
     WalletAction wallet act ->  do
         let
@@ -380,6 +383,7 @@ handleMultiAgent = interpret $ \case
             & interpret (mapLog (review p5))
             & interpret (mapLog (review p6))
             & interpret (mapLog (review p4))
+            & runReader pparams
             & interpret (handleZoomedState (walletState wallet))
             & interpret (mapLog (review p1))
             & interpret (handleZoomedState (walletState wallet . Wallet.nodeClient))

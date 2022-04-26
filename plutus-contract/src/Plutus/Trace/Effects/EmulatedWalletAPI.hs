@@ -13,10 +13,12 @@ module Plutus.Trace.Effects.EmulatedWalletAPI(
     , handleEmulatedWalletAPI
     ) where
 
+import Cardano.Api.Shelley (ProtocolParameters)
 import Control.Monad.Freer (Eff, Member, subsume, type (~>))
 import Control.Monad.Freer.Error (Error)
 import Control.Monad.Freer.Extras (raiseEnd)
 import Control.Monad.Freer.Extras.Log (LogMsg)
+import Control.Monad.Freer.Reader (Reader)
 import Control.Monad.Freer.TH (makeEffect)
 import Data.Text (Text)
 import Ledger.Tx (getCardanoTxId)
@@ -29,7 +31,7 @@ import Wallet.Emulator.MultiAgent (MultiAgentEffect, walletAction)
 import Wallet.Emulator.Wallet (Wallet)
 
 data EmulatedWalletAPI r where
-    LiftWallet :: Wallet -> Eff '[WalletEffect, Error WalletAPIError, LogMsg Text] a -> EmulatedWalletAPI a
+    LiftWallet :: Wallet -> Eff '[WalletEffect, Error WalletAPIError, LogMsg Text, Reader ProtocolParameters] a -> EmulatedWalletAPI a
 
 makeEffect ''EmulatedWalletAPI
 
@@ -37,6 +39,7 @@ makeEffect ''EmulatedWalletAPI
 payToWallet ::
     forall effs.
     ( Member EmulatedWalletAPI effs
+    -- , Member () effs
     )
     => Wallet
     -> Wallet
@@ -57,6 +60,7 @@ handleEmulatedWalletAPI ::
 handleEmulatedWalletAPI = \case
     LiftWallet w action ->
         walletAction w
+            $ subsume
             $ subsume
             $ subsume
             $ subsume

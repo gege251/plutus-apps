@@ -34,6 +34,7 @@ module Plutus.Trace.Emulator.ContractInstance(
     , addResponse
     ) where
 
+import Cardano.Api.Shelley (ProtocolParameters)
 import Control.Lens (at, preview, view, (?~))
 import Control.Monad (guard, join, unless, void, when)
 import Control.Monad.Freer (Eff, Member, Members, interpret, send, subsume)
@@ -460,7 +461,8 @@ respondToRequest isLogShowed f = do
         hdl' :: (Eff (ContractInstanceRequests effs) (Maybe (Response PABResp))) = raiseEnd hdl
 
         response_ :: Eff effs (Maybe (Response PABResp)) =
-            subsume @(LogMsg T.Text)
+            subsume @(Reader ProtocolParameters)
+                    $ subsume @(LogMsg T.Text)
                     $ subsume @(LogMsg TxBalanceMsg)
                     $ subsume @(LogMsg RequestHandlerLogMsg)
                     $ subsume @(LogObserve (LogMessage T.Text))

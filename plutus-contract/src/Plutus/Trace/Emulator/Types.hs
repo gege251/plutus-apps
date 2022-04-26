@@ -52,6 +52,7 @@ module Plutus.Trace.Emulator.Types(
     , UserThreadMsg(..)
     ) where
 
+import Cardano.Api.Shelley (ProtocolParameters)
 import Control.DeepSeq
 import Control.Lens
 import Control.Monad.Freer.Coroutine
@@ -127,6 +128,7 @@ type EmulatedWalletEffects' effs =
         ': LogMsg RequestHandlerLogMsg
         ': LogMsg TxBalanceMsg
         ': LogMsg T.Text
+        ': Reader ProtocolParameters
         ': effs
 
 type EmulatedWalletEffects = EmulatedWalletEffects' '[]

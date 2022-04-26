@@ -54,6 +54,7 @@ library
         Plutus.Contract.Schema
         Plutus.Contract.Trace
         Plutus.Contract.Trace.RequestHandler
+        Plutus.Contract.ProtocolParameters
         Plutus.Contract.Resumable
         Plutus.Contract.StateMachine
         Plutus.Contract.StateMachine.OnChain

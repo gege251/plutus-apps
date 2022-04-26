@@ -65,6 +65,7 @@ module Wallet.Emulator.Types(
     Wallet.Emulator.Wallet.selectCoin
     ) where
 
+import Cardano.Api.Shelley (ProtocolParameters)
 import Cardano.Crypto.Wallet qualified as Crypto
 import Control.Lens hiding (index)
 import Control.Monad.Freer (Eff, Member, interpret, reinterpret2, type (~>))
@@ -99,11 +100,12 @@ processEmulated :: forall effs.
     , Member (LogMsg EmulatorEvent') effs
     )
     => SlotConfig
+    -> ProtocolParameters
     -> Eff (MultiAgentEffect ': MultiAgentControlEffect ': ChainEffect ': ChainControlEffect ': effs)
     ~> Eff effs
-processEmulated slotCfg act =
+processEmulated slotCfg pparams act =
     act
-        & handleMultiAgent
+        & (handleMultiAgent pparams)
         & handleMultiAgentControl
         & reinterpret2 @ChainEffect @(State ChainState) @(LogMsg ChainEvent) (handleChain slotCfg)
         & interpret (Eff.handleZoomedState chainState)

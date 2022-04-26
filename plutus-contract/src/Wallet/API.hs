@@ -56,25 +56,23 @@ module Wallet.API(
     Wallet.Error.throwOtherError,
     ) where
 
-import Control.Lens (over)
+import Cardano.Api.Shelley (ProtocolParameters)
 import Control.Monad (unless, void)
 import Control.Monad.Freer (Eff, Member)
 import Control.Monad.Freer.Error (Error, throwError)
 import Control.Monad.Freer.Extras.Log (LogMsg, logWarn)
+import Control.Monad.Freer.Reader (Reader, ask)
 import Data.Default (Default (def))
 import Data.Text (Text)
 import Data.Void (Void)
 import Ledger (CardanoTx, Interval (Interval, ivFrom, ivTo), PaymentPubKeyHash, PubKey (PubKey, getPubKey),
                PubKeyHash (PubKeyHash, getPubKeyHash), Slot, SlotRange, Value, after, always, before, contains,
-               interval, isEmpty, member, minAdaTxOut, singleton, width)
+               interval, isEmpty, member, singleton, width)
 import Ledger.Constraints qualified as Constraints
-import Ledger.Constraints.OffChain (tx)
 import Ledger.TimeSlot qualified as TimeSlot
-import Ledger.Tx qualified as Tx
-import Plutus.V1.Ledger.Ada qualified as Ada
 import Wallet.Effects (NodeClientEffect, WalletEffect, balanceTx, getClientSlot, getClientSlotConfig,
                        ownPaymentPubKeyHash, publishTx, submitTxn, walletAddSignature, yieldUnbalancedTx)
-import Wallet.Error (WalletAPIError (PaymentMkTxError))
+import Wallet.Error (WalletAPIError (PaymentMkTxError, ToCardanoError))
 import Wallet.Error qualified
 
 -- | Transfer some funds to an address locked by a public key, returning the
@@ -87,6 +85,7 @@ payToPaymentPublicKeyHash ::
     ( Member WalletEffect effs
     , Member (Error WalletAPIError) effs
     , Member (LogMsg Text) effs
+    , Member (Reader ProtocolParameters) effs
     )
     => SlotRange -> Value -> PaymentPubKeyHash -> Eff effs CardanoTx
 payToPaymentPublicKeyHash range v pk = do
@@ -95,26 +94,20 @@ payToPaymentPublicKeyHash range v pk = do
     utx <- either (throwError . PaymentMkTxError)
                   pure
                   (Constraints.mkTx @Void mempty constraints)
-    let adjustedUtx = adjustUnbalancedTx utx
+    pparams <- ask @ProtocolParameters
+    adjustedUtx <- either (throwError . ToCardanoError) pure (Constraints.adjustUnbalancedTx pparams utx)
     unless (utx == adjustedUtx) $
       logWarn @Text $ "Wallet.API.payToPublicKeyHash: "
                    <> "Adjusted a transaction output value which has less than the minimum amount of Ada."
     balancedTx <- balanceTx adjustedUtx
     either throwError signTxAndSubmit balancedTx
-    where
-        adjustUnbalancedTx :: Constraints.UnbalancedTx -> Constraints.UnbalancedTx
-        adjustUnbalancedTx = over (tx . Tx.outputs . traverse) adjustTxOut
-          where
-            adjustTxOut :: Tx.TxOut -> Tx.TxOut
-            adjustTxOut txOut =
-              let missingLovelace = max 0 (minAdaTxOut - Ada.fromValue (Tx.txOutValue txOut))
-               in txOut { Tx.txOutValue = Tx.txOutValue txOut <> Ada.toValue missingLovelace }
 
 -- | Transfer some funds to an address locked by a public key.
 payToPaymentPublicKeyHash_ ::
     ( Member WalletEffect effs
     , Member (Error WalletAPIError) effs
     , Member (LogMsg Text) effs
+    , Member (Reader ProtocolParameters) effs
     )
     => SlotRange -> Value -> PaymentPubKeyHash -> Eff effs ()
 payToPaymentPublicKeyHash_ r v = void . payToPaymentPublicKeyHash r v
