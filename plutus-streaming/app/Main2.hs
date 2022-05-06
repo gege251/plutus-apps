@@ -73,18 +73,18 @@ transactions ::
   Cardano.Api.BlockInMode Cardano.Api.CardanoMode ->
   [Ledger.CardanoTx]
 transactions (Cardano.Api.BlockInMode (Cardano.Api.Block _ txs) eim) =
-  map (\tx -> Ledger.CardanoApiTx (fix (Ledger.SomeTx tx) eim)) txs
+  map (\tx -> Ledger.CardanoApiTx (workaround (Ledger.SomeTx tx) eim)) txs
 
 -- https://github.com/input-output-hk/cardano-node/pull/3665
-fix ::
+workaround ::
   (Cardano.Api.IsCardanoEra era => Cardano.Api.EraInMode era Cardano.Api.CardanoMode -> a) ->
   Cardano.Api.EraInMode era Cardano.Api.CardanoMode ->
   a
-fix k Cardano.Api.ByronEraInCardanoMode   = k Cardano.Api.ByronEraInCardanoMode
-fix k Cardano.Api.ShelleyEraInCardanoMode = k Cardano.Api.ShelleyEraInCardanoMode
-fix k Cardano.Api.AllegraEraInCardanoMode = k Cardano.Api.AllegraEraInCardanoMode
-fix k Cardano.Api.MaryEraInCardanoMode    = k Cardano.Api.MaryEraInCardanoMode
-fix k Cardano.Api.AlonzoEraInCardanoMode  = k Cardano.Api.AlonzoEraInCardanoMode
+workaround k Cardano.Api.ByronEraInCardanoMode   = k Cardano.Api.ByronEraInCardanoMode
+workaround k Cardano.Api.ShelleyEraInCardanoMode = k Cardano.Api.ShelleyEraInCardanoMode
+workaround k Cardano.Api.AllegraEraInCardanoMode = k Cardano.Api.AllegraEraInCardanoMode
+workaround k Cardano.Api.MaryEraInCardanoMode    = k Cardano.Api.MaryEraInCardanoMode
+workaround k Cardano.Api.AlonzoEraInCardanoMode  = k Cardano.Api.AlonzoEraInCardanoMode
 
 txInsAndOuts ::
   Ledger.CardanoTx ->
