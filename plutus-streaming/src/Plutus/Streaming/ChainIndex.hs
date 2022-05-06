@@ -1,17 +1,31 @@
-module Plutus.Streaming.ChainIndex (
-  utxoState,
-  utxoState',
-  UtxoState,
-  TxUtxoBalance
-) where
+{-# LANGUAGE GADTs          #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
+module Plutus.Streaming.ChainIndex
+  ( utxoState,
+    utxoState',
+    UtxoState,
+    TxUtxoBalance,
+  )
+where
+
+import Cardano.Api (AddressAny, AddressInEra (AddressInEra), Block (Block), BlockInMode (BlockInMode), CardanoMode,
+                    ChainPoint (ChainPointAtGenesis), CtxTx, NetworkId (Mainnet), Tx (Tx), TxBody (TxBody),
+                    TxBodyContent (TxBodyContent, txOuts), TxOut (TxOut), toAddressAny)
+import Data.Set (Set)
+import Ledger (TxIn, TxOut, TxOutRef)
+import Ledger.Tx.CardanoAPI (FromCardanoError)
 import Plutus.ChainIndex (TxUtxoBalance)
+import Plutus.ChainIndex.Compatibility qualified
 import Plutus.ChainIndex.Compatibility qualified as CI
+import Plutus.ChainIndex.Tx (ChainIndexTx (_citxInputs), txOutsWithRef)
 import Plutus.ChainIndex.TxUtxoBalance qualified as TxUtxoBalance
 import Plutus.ChainIndex.UtxoState (UtxoIndex, UtxoState)
 import Plutus.ChainIndex.UtxoState qualified as UtxoState
-import Plutus.Streaming
-import Streaming
+import Plutus.Contract.CardanoAPI qualified
+import Plutus.Streaming (ChainSyncEvent (RollBackward, RollForward), SimpleChainSyncEvent,
+                         withSimpleChainSyncEventStream)
+import Streaming (Of, Stream)
 import Streaming.Prelude qualified as S
 
 utxoState ::
@@ -50,3 +64,25 @@ utxoState' =
     initial = mempty
 
     projection = UtxoState.utxoState
+
+--
+-- Experimental stuff
+--
+
+data Some f = forall a. Some (f a)
+
+f ::
+  BlockInMode CardanoMode ->
+  [Some (Cardano.Api.TxOut CtxTx)]
+f (BlockInMode (Block _bh txs) _eim) =
+  concatMap (\(Tx (TxBody TxBodyContent {txOuts}) _kws) -> map Some txOuts) txs
+
+getTxOuts ::
+  BlockInMode CardanoMode ->
+  [AddressAny]
+getTxOuts (BlockInMode (Block _bh txs) _eim) =
+  foldMap go txs
+  where
+    go (Tx (TxBody TxBodyContent {txOuts}) _kws) =
+      map (\(TxOut (AddressInEra _ addr) _ _) -> toAddressAny addr) txOuts
+

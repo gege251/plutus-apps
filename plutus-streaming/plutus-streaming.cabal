@@ -44,6 +44,7 @@ library
         bytestring,
         cardano-api,
         containers,
+        plutus-ledger,
         plutus-chain-index-core,
         stm,
         streaming,
@@ -60,5 +61,21 @@ executable plutus-streaming-cli
         aeson,
         cardano-api,
         optparse-applicative,
+        streaming,
+        text
+
+executable plutus-streaming-cli-2
+    import: lang
+    hs-source-dirs:   app
+    main-is:          Main2.hs
+    build-depends:
+        plutus-streaming,
+        base >=4.9 && <5,
+        aeson,
+        bytestring,
+        containers,
+        cardano-api,
+        optparse-applicative,
+        plutus-ledger,
         streaming,
         text
