@@ -4,14 +4,14 @@
 
 module Main where
 
-import Cardano.Api (Block (Block), BlockInMode (BlockInMode), ChainPoint (ChainPoint, ChainPointAtGenesis),
-                    NetworkId (Mainnet, Testnet), NetworkMagic (NetworkMagic), SlotNo (SlotNo))
+import Cardano.Api (ChainPoint (ChainPoint, ChainPointAtGenesis), NetworkId (Mainnet, Testnet),
+                    NetworkMagic (NetworkMagic), SlotNo (SlotNo))
 import Cardano.Api.Extras ()
 import Data.Aeson.Text qualified as Aeson
 import Data.Text.Lazy qualified as TL
 import Options.Applicative (Alternative ((<|>)), Parser, auto, execParser, flag', help, helper, info, long, metavar,
                             option, str, strOption, (<**>))
-import Plutus.Streaming (ChainSyncEvent (RollBackward, RollForward), withSimpleChainSyncEventStream)
+import Plutus.Streaming (StreamerEvent (Append, Revert), withSimpleStreamerEventStream)
 import Streaming.Prelude qualified as S
 
 --
@@ -71,15 +71,15 @@ main = do
   Options {optionsSocketPath, optionsNetworkId, optionsChainPoint} <-
     execParser $ info (optionsParser <**> helper) mempty
 
-  withSimpleChainSyncEventStream
+  withSimpleStreamerEventStream
     optionsSocketPath
     optionsNetworkId
     optionsChainPoint
     $ S.stdoutLn
       . S.map
         ( \case
-            RollForward (BlockInMode (Block header _txs) _era) _ct ->
-              "RollForward, header: " <> TL.unpack (Aeson.encodeToLazyText header)
-            RollBackward cp _ct ->
-              "RollBackward, point: " <> TL.unpack (Aeson.encodeToLazyText cp)
+            Append cp _bim ->
+              "Append block: " <> TL.unpack (Aeson.encodeToLazyText cp)
+            Revert cp ->
+              "Revert to point: " <> TL.unpack (Aeson.encodeToLazyText cp)
         )

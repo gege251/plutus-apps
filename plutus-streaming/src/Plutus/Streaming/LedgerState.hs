@@ -1,16 +1,16 @@
 module Plutus.Streaming.LedgerState
   ( ledgerState,
     ledgerState',
-    LedgerState (..),
-    LedgerEvent (..),
   )
 where
 
-import Cardano.Api
-import Data.Sequence (Seq (..))
+import Cardano.Api (Block (Block), BlockHeader (BlockHeader), BlockInMode (BlockInMode),
+                    ChainPoint (ChainPoint, ChainPointAtGenesis), Env, LedgerEvent, LedgerState, LedgerStateError,
+                    SlotNo, ValidationMode, applyBlock, envSecurityParam)
+import Data.Sequence (Seq ((:<|)))
 import Data.Sequence qualified as Seq
-import Plutus.Streaming
-import Streaming
+import Plutus.Streaming (SimpleStreamerEvent, StreamerEvent (Append, Revert))
+import Streaming (Of, Stream)
 import Streaming.Prelude qualified as S
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -34,7 +34,7 @@ ledgerState ::
   Env ->
   LedgerState ->
   ValidationMode ->
-  Stream (Of SimpleChainSyncEvent) m r ->
+  Stream (Of SimpleStreamerEvent) m r ->
   Stream (Of (LedgerState, [LedgerEvent])) m r
 ledgerState env ls0 vm = S.map snd . ledgerState' env ls0 vm
 
@@ -51,20 +51,20 @@ ledgerState' ::
   Env ->
   LedgerState ->
   ValidationMode ->
-  Stream (Of SimpleChainSyncEvent) m r ->
-  Stream (Of (SimpleChainSyncEvent, (LedgerState, [LedgerEvent]))) m r
+  Stream (Of SimpleStreamerEvent) m r ->
+  Stream (Of (SimpleStreamerEvent, (LedgerState, [LedgerEvent]))) m r
 ledgerState' env ls0 vm =
   S.scanned step initialHistory projection
   where
     step ::
       (History LedgerState, [LedgerEvent]) ->
-      SimpleChainSyncEvent ->
+      SimpleStreamerEvent ->
       (History LedgerState, [LedgerEvent])
-    step (history, _) (RollForward (BlockInMode blk _) _) =
+    step (history, _) (Append _ (BlockInMode blk _)) =
       unsafePushBlock history blk
-    step _ (RollBackward ChainPointAtGenesis _) =
+    step _ (Revert ChainPointAtGenesis) =
       initialHistory
-    step (history, _) (RollBackward (ChainPoint sn _) _) =
+    step (history, _) (Revert (ChainPoint sn _)) =
       unsafeRollback history sn
 
     initialHistory :: (History LedgerState, [LedgerEvent])

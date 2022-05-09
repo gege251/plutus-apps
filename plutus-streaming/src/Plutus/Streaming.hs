@@ -1,17 +1,17 @@
 module Plutus.Streaming
-  ( SimpleChainSyncEvent,
-    withSimpleChainSyncEventStream,
-    ChainSyncEvent (..),
-    ChainSyncEventException (..),
+  ( SimpleStreamerEvent,
+    withSimpleStreamerEventStream,
+    StreamerEvent (..),
+    StreamerEventException (..),
   )
 where
 
-import Cardano.Api (BlockInMode, CardanoMode, ChainPoint, ChainSyncClient (ChainSyncClient), ChainTip,
-                    ConsensusModeParams (CardanoModeParams), EpochSlots (EpochSlots),
+import Cardano.Api (BlockHeader (BlockHeader), BlockInMode (BlockInMode), CardanoMode, ChainPoint (ChainPoint),
+                    ChainSyncClient (ChainSyncClient), ConsensusModeParams (CardanoModeParams), EpochSlots (EpochSlots),
                     LocalChainSyncClient (LocalChainSyncClient),
                     LocalNodeClientProtocols (LocalNodeClientProtocols, localChainSyncClient, localStateQueryClient, localTxSubmissionClient),
                     LocalNodeConnectInfo (LocalNodeConnectInfo, localConsensusModeParams, localNodeNetworkId, localNodeSocketPath),
-                    NetworkId, ToJSON, connectToLocalNode)
+                    NetworkId, ToJSON, connectToLocalNode, getBlockHeader)
 import Cardano.Api.ChainSync.Client (ClientStIdle (SendMsgDone, SendMsgFindIntersect, SendMsgRequestNext),
                                      ClientStIntersect (ClientStIntersect, recvMsgIntersectFound, recvMsgIntersectNotFound),
                                      ClientStNext (ClientStNext, recvMsgRollBackward, recvMsgRollForward))
@@ -23,29 +23,29 @@ import GHC.Generics (Generic)
 import Streaming (Of, Stream)
 import Streaming.Prelude qualified as S
 
-data ChainSyncEvent a
-  = RollForward a ChainTip
-  | RollBackward ChainPoint ChainTip
+data StreamerEvent a
+  = Append ChainPoint a
+  | Revert ChainPoint
   deriving (Show, Functor, Generic)
 
-instance ToJSON a => ToJSON (ChainSyncEvent a)
+instance ToJSON a => ToJSON (StreamerEvent a)
 
-type SimpleChainSyncEvent = ChainSyncEvent (BlockInMode CardanoMode)
+type SimpleStreamerEvent = StreamerEvent (BlockInMode CardanoMode)
 
-data ChainSyncEventException
+data StreamerEventException
   = NoIntersectionFound
   deriving (Show)
 
-instance Exception ChainSyncEventException
+instance Exception StreamerEventException
 
-withSimpleChainSyncEventStream ::
+withSimpleStreamerEventStream ::
   FilePath ->
   NetworkId ->
   -- | The point on the chain to start streaming from
   ChainPoint ->
-  (Stream (Of SimpleChainSyncEvent) IO r -> IO b) ->
+  (Stream (Of SimpleStreamerEvent) IO r -> IO b) ->
   IO b
-withSimpleChainSyncEventStream socketPath networkId point consumer = do
+withSimpleStreamerEventStream socketPath networkId point consumer = do
   -- The chain-sync client runs in a different thread and it will send us
   -- block through this channel.
   chan <- newBroadcastTChanIO
@@ -97,11 +97,15 @@ withSimpleChainSyncEventStream socketPath networkId point consumer = do
 --
 -- Blocks obtained from the chain-sync mini-protocol are passed to a
 -- consumer through a channel. To understand the MVar-Maybe-Chan dance see
--- note in `withSimpleChainSyncEventStream`
+-- note in `withSimpleStreamerEventStream`
+-- chainSyncStreamingClient ::
+--   ChainPoint ->
+--   TChan (StreamerEvent e) ->
+--   ChainSyncClient e ChainPoint ChainTip IO ()
 chainSyncStreamingClient ::
   ChainPoint ->
-  TChan (ChainSyncEvent e) ->
-  ChainSyncClient e ChainPoint ChainTip IO ()
+  TChan (StreamerEvent (BlockInMode mode)) ->
+  ChainSyncClient (BlockInMode mode) ChainPoint tip IO ()
 chainSyncStreamingClient point chan =
   ChainSyncClient $ pure $ SendMsgFindIntersect [point] onIntersect
   where
@@ -119,12 +123,14 @@ chainSyncStreamingClient point chan =
       where
         onNext =
           ClientStNext
-            { recvMsgRollForward = \bim ct ->
+            { recvMsgRollForward = \bim@(BlockInMode blk _eim) _ct ->
                 ChainSyncClient $ do
-                  atomically $ writeTChan chan (RollForward bim ct)
+                  let (BlockHeader slotNo blockHash _blockNo) = getBlockHeader blk
+                  let cp = ChainPoint slotNo blockHash
+                  atomically $ writeTChan chan (Append cp bim)
                   sendRequestNext,
-              recvMsgRollBackward = \cp ct ->
+              recvMsgRollBackward = \cp _ct ->
                 ChainSyncClient $ do
-                  atomically $ writeTChan chan (RollBackward cp ct)
+                  atomically $ writeTChan chan (Revert cp)
                   sendRequestNext
             }

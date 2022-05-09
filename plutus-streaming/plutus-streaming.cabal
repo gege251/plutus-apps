@@ -37,6 +37,7 @@ library
         Plutus.Streaming
         Plutus.Streaming.ChainIndex
         Plutus.Streaming.LedgerState
+        Plutus.Streaming.Transactions
     build-depends:
         base >=4.9 && <5,
         async,
