@@ -29,7 +29,6 @@ import Plutus.V1.Ledger.Scripts qualified as Scripts
 import Plutus.V1.Ledger.Slot qualified as Slot
 import Plutus.V1.Ledger.Tx
 import Plutus.V1.Ledger.Value qualified as V
-import PlutusTx (toBuiltinData)
 import Prettyprinter (Pretty)
 import Prettyprinter.Extras (PrettyShow (..))
 

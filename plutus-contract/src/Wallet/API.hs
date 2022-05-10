@@ -68,6 +68,7 @@ import Ledger (CardanoTx, Interval (Interval, ivFrom, ivTo), PaymentPubKeyHash, 
                PubKeyHash (PubKeyHash, getPubKeyHash), Slot, SlotRange, Value, after, always, before, contains,
                interval, isEmpty, member, singleton, width)
 import Ledger.Constraints qualified as Constraints
+import Ledger.ProtocolParameters ()
 import Ledger.TimeSlot qualified as TimeSlot
 import Wallet.Effects (NodeClientEffect, WalletEffect, balanceTx, getClientSlot, getClientSlotConfig,
                        ownPaymentPubKeyHash, publishTx, submitTxn, walletAddSignature, yieldUnbalancedTx)
@@ -105,8 +106,8 @@ payToPaymentPublicKeyHash_ ::
     , Member (Error WalletAPIError) effs
     , Member (LogMsg Text) effs
     )
-    => ProtocolParameters -> SlotRange -> Value -> PaymentPubKeyHash -> Eff effs ()
-payToPaymentPublicKeyHash_ pparams r v = void . payToPaymentPublicKeyHash pparams r v
+    => SlotRange -> Value -> PaymentPubKeyHash -> Eff effs ()
+payToPaymentPublicKeyHash_ r v = void . payToPaymentPublicKeyHash def r v
 
 -- | Add the wallet's signature to the transaction and submit it. Returns
 --   the transaction with the wallet's signature.
