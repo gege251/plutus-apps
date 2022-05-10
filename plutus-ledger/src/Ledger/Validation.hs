@@ -335,7 +335,7 @@ fromPlutusTxId :: P.TxId -> Either P.ToCardanoError (TxId StandardCrypto)
 fromPlutusTxId = fmap toShelleyTxId . P.toCardanoTxId
 
 fromPlutusTxOut' :: P.TxOut -> Either P.ToCardanoError (TxOut EmulatorEra)
-fromPlutusTxOut' = fmap (toShelleyTxOut ShelleyBasedEraAlonzo) . P.toCardanoTxOut emulatorNetworkId P.toCardanoTxOutDatumHash
+fromPlutusTxOut' = fmap (toShelleyTxOut ShelleyBasedEraAlonzo) . P.toCardanoTxOutUnsafe emulatorNetworkId P.toCardanoTxOutDatumHash
 
 fromPlutusTxOut :: C.Api.NetworkId -> P.TxOut -> Either P.ToCardanoError (TxOut EmulatorEra)
 fromPlutusTxOut networkId = fmap (toShelleyTxOut ShelleyBasedEraAlonzo) . P.toCardanoTxOut networkId P.toCardanoTxOutDatumHash

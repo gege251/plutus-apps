@@ -71,7 +71,6 @@ import PlutusTx.Numeric qualified as N
 
 import Data.Semigroup (First (First, getFirst))
 import Data.Set (Set)
-import Ledger qualified
 import Ledger.Address (PaymentPubKey (PaymentPubKey), PaymentPubKeyHash (PaymentPubKeyHash), StakePubKeyHash,
                        pubKeyHashAddress)
 import Ledger.Address qualified as Address
@@ -83,6 +82,7 @@ import Ledger.Constraints.TxConstraints (ScriptInputConstraint (ScriptInputConst
                                          TxConstraints (TxConstraints, txConstraintFuns, txConstraints, txOwnInputs, txOwnOutputs))
 
 import Ledger.Crypto (pubKeyHash)
+import Ledger.Index (minAdaTxOut)
 import Ledger.Orphans ()
 import Ledger.Scripts (Datum (Datum), DatumHash, MintingPolicy, MintingPolicyHash, Redeemer, Validator, ValidatorHash,
                        datumHash, mintingPolicyHash, validatorHash)
@@ -98,6 +98,8 @@ import Plutus.V1.Ledger.Ada qualified as Ada
 import Plutus.V1.Ledger.Time (POSIXTimeRange)
 import Plutus.V1.Ledger.Value (Value)
 import Plutus.V1.Ledger.Value qualified as Value
+
+import Debug.Trace
 
 data ScriptLookups a =
     ScriptLookups
@@ -408,7 +410,12 @@ adjustUnbalancedTx pparams = mapMOf (tx . Tx.outputs . traverse) adjustTxOut
     adjustTxOut txOut = fromPlutusTxOut' txOut <&> \txOut' ->
         let minAdaTxOut' = Ada.fromValue $ evaluateMinLovelaceOutput pparams txOut'
             missingLovelace = max 0 (minAdaTxOut' - Ada.fromValue (txOutValue txOut))
-        in txOut { txOutValue = txOutValue txOut <> Ada.toValue missingLovelace }
+        in trace ("missingLovelace" ++ show missingLovelace) $
+            trace ("txOutValue txOut was: " ++ show (txOutValue txOut)) $
+            trace ("calculated minAdaTxOut': " ++ show minAdaTxOut') $
+            trace ("txOutValue result: " ++ show (txOutValue txOut <> Ada.toValue missingLovelace)) $
+            trace ("END")
+                txOut { txOutValue = txOutValue txOut <> Ada.toValue missingLovelace }
 
 -- | Add the remaining balance of the total value that the tx must spend.
 --   See note [Balance of value spent]

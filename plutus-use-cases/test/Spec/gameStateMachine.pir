@@ -7892,12 +7892,8 @@
                                                                                                                                               emptyByteString
                                                                                                                                             ]
                                                                                                                                           ]
-                                                                                                                                          minAdaTxOut
+                                                                                                                                          minTxOut
                                                                                                                                         ]
-<<<<<<< HEAD
-=======
-                                                                                                                                        minTxOut
->>>>>>> Add AdjustUnbalancedTx effect
                                                                                                                                       ]
                                                                                                                                     ]
                                                                                                                                     True

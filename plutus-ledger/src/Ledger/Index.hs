@@ -217,7 +217,7 @@ validateTransactionOffChain :: ValidationMonad m
 validateTransactionOffChain t = do
     checkValuePreserved t
     checkPositiveValues t
-    checkMinAdaInTxOutputs t
+--    checkMinAdaInTxOutputs t
     checkFeeIsAda t
 
     -- see note [Minting of Ada]
