@@ -12,6 +12,7 @@ module Cardano.Wallet.Mock.Server
     ( main
     ) where
 
+import Cardano.Api.Shelley (ProtocolParameters)
 import Cardano.BM.Data.Trace (Trace)
 import Cardano.ChainIndex.Types (ChainIndexUrl (ChainIndexUrl))
 import Cardano.Node.Types (ChainSyncHandle)
@@ -50,12 +51,13 @@ app :: Trace IO WalletMsg
     -> ClientEnv
     -> MVar Wallets
     -> SlotConfig
+    -> ProtocolParameters
     -> Application
-app trace txSendHandle chainSyncHandle chainIndexEnv mVarState slotCfg =
+app trace txSendHandle chainSyncHandle chainIndexEnv mVarState slotCfg pparams =
     serve (Proxy @(API WalletId)) $
     hoistServer
         (Proxy @(API WalletId))
-        (processWalletEffects trace txSendHandle chainSyncHandle chainIndexEnv mVarState slotCfg) $
+        (processWalletEffects trace txSendHandle chainSyncHandle chainIndexEnv mVarState slotCfg pparams) $
             (\funds -> createWallet (Ada.lovelaceOf <$> funds)) :<|>
             (\w tx -> multiWallet (Wallet Nothing w) (submitTxn tx) >>= const (pure NoContent)) :<|>
             (getWalletInfo >=> maybe (throwError err404) pure ) :<|>
@@ -63,8 +65,8 @@ app trace txSendHandle chainSyncHandle chainIndexEnv mVarState slotCfg =
             (\w -> multiWallet (Wallet Nothing w) totalFunds) :<|>
             (\w tx -> multiWallet (Wallet Nothing w) (walletAddSignature tx))
 
-main :: Trace IO WalletMsg -> LocalWalletSettings -> FilePath -> SlotConfig -> ChainIndexUrl -> Availability -> IO ()
-main trace LocalWalletSettings { baseUrl } serverSocket slotCfg (ChainIndexUrl chainUrl) availability = LM.runLogEffects trace $ do
+main :: Trace IO WalletMsg -> LocalWalletSettings -> FilePath -> SlotConfig -> ProtocolParameters -> ChainIndexUrl -> Availability -> IO ()
+main trace LocalWalletSettings { baseUrl } serverSocket slotCfg pparams (ChainIndexUrl chainUrl) availability = LM.runLogEffects trace $ do
     chainIndexEnv <- buildEnv chainUrl defaultManagerSettings
     let knownWallets = Map.fromList $ zip (Wallet.getWalletId <$> Wallet.knownWallets) (Wallet.fromMockWallet <$> CW.knownMockWallets)
     mVarState <- liftIO $ newMVar knownWallets
@@ -78,6 +80,7 @@ main trace LocalWalletSettings { baseUrl } serverSocket slotCfg (ChainIndexUrl c
                  chainIndexEnv
                  mVarState
                  slotCfg
+                 pparams
     where
         servicePort = baseUrlPort (coerce baseUrl)
         warpSettings = Warp.defaultSettings & Warp.setPort servicePort & Warp.setBeforeMainLoop (available availability)

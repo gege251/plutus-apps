@@ -52,12 +52,9 @@ module Ledger.Index(
     ) where
 
 import Cardano.Api (Lovelace (..))
-import Cardano.Ledger.Alonzo (AlonzoEra)
-import Cardano.Ledger.Crypto (StandardCrypto)
+import Cardano.Api.Shelley (ProtocolParameters)
 import Prelude hiding (lookup)
 
-import Codec.Serialise (Serialise)
-import Control.DeepSeq (NFData)
 import Control.Lens (toListOf, view, (^.))
 import Control.Lens.Indexed (iforM_)
 import Control.Monad
@@ -66,17 +63,19 @@ import Control.Monad.Reader (MonadReader (..), ReaderT (..), ask)
 import Control.Monad.Writer (MonadWriter, Writer, runWriter, tell)
 import Data.Aeson (FromJSON (..), ToJSON (..))
 import Data.Foldable (asum, fold, foldl', for_, traverse_)
+import Data.Functor ((<&>))
 import Data.Map qualified as Map
-import Data.OpenApi.Schema qualified as OpenApi
 import Data.Set qualified as Set
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import Ledger.Blockchain
 import Ledger.Crypto
+import Ledger.Index.Internal
 import Ledger.Orphans ()
 import Ledger.Scripts
 import Ledger.TimeSlot qualified as TimeSlot
 import Ledger.Tx (txId)
+import Ledger.Validation (evaluateMinLovelaceOutput, fromPlutusTxOut')
 import Plutus.V1.Ledger.Ada (Ada)
 import Plutus.V1.Ledger.Ada qualified as Ada
 import Plutus.V1.Ledger.Address
@@ -92,20 +91,12 @@ import Plutus.V1.Ledger.TxId
 import Plutus.V1.Ledger.Value qualified as V
 import PlutusTx (toBuiltinData)
 import PlutusTx.Numeric qualified as P
-import Prettyprinter (Pretty)
-import Prettyprinter.Extras (PrettyShow (..))
 
 -- | Context for validating transactions. We need access to the unspent
 --   transaction outputs of the blockchain, and we can throw 'ValidationError's.
 type ValidationMonad m = (MonadReader ValidationCtx m, MonadError ValidationError m, MonadWriter [ScriptValidationEvent] m)
 
-data ValidationCtx = ValidationCtx { vctxIndex :: UtxoIndex, vctxSlotConfig :: TimeSlot.SlotConfig }
-
--- | The UTxOs of a blockchain indexed by their references.
-newtype UtxoIndex = UtxoIndex { getIndex :: Map.Map TxOutRef TxOut }
-    deriving stock (Show, Generic)
-    deriving newtype (Eq, Semigroup, OpenApi.ToSchema, Monoid, Serialise)
-    deriving anyclass (FromJSON, ToJSON, NFData)
+data ValidationCtx = ValidationCtx { vctxIndex :: UtxoIndex, vctxSlotConfig :: TimeSlot.SlotConfig, vctxProtocolParams :: ProtocolParameters }
 
 -- | Create an index of all UTxOs on the chain.
 initialise :: Blockchain -> UtxoIndex
@@ -128,54 +119,6 @@ lookup :: MonadError ValidationError m => TxOutRef -> UtxoIndex -> m TxOut
 lookup i index = case Map.lookup i $ getIndex index of
     Just t  -> pure t
     Nothing -> throwError $ TxOutRefNotFound i
-
-type EmulatorEra = AlonzoEra StandardCrypto
-
--- | A reason why a transaction is invalid.
-data ValidationError =
-    InOutTypeMismatch TxIn TxOut
-    -- ^ A pay-to-pubkey output was consumed by a pay-to-script input or vice versa, or the 'TxIn' refers to a different public key than the 'TxOut'.
-    | TxOutRefNotFound TxOutRef
-    -- ^ The transaction output consumed by a transaction input could not be found (either because it was already spent, or because
-    -- there was no transaction with the given hash on the blockchain).
-    | InvalidScriptHash Validator ValidatorHash
-    -- ^ For pay-to-script outputs: the validator script provided in the transaction input does not match the hash specified in the transaction output.
-    | InvalidDatumHash Datum DatumHash
-    -- ^ For pay-to-script outputs: the datum provided in the transaction input does not match the hash specified in the transaction output.
-    | MissingRedeemer RedeemerPtr
-    -- ^ For scripts that take redeemers: no redeemer was provided for this script.
-    | InvalidSignature PubKey Signature
-    -- ^ For pay-to-pubkey outputs: the signature of the transaction input does not match the public key of the transaction output.
-    | ValueNotPreserved V.Value V.Value
-    -- ^ The amount spent by the transaction differs from the amount consumed by it.
-    | NegativeValue Tx
-    -- ^ The transaction produces an output with a negative value.
-    | ValueContainsLessThanMinAda Tx TxOut
-    -- ^ The transaction produces an output with a value containing less than the minimum required Ada.
-    | NonAdaFees Tx
-    -- ^ The fee is not denominated entirely in Ada.
-    | ScriptFailure ScriptError
-    -- ^ For pay-to-script outputs: evaluation of the validator script failed.
-    | CurrentSlotOutOfRange Slot.Slot
-    -- ^ The current slot is not covered by the transaction's validity slot range.
-    | SignatureMissing PubKeyHash
-    -- ^ The transaction is missing a signature
-    | MintWithoutScript Scripts.MintingPolicyHash
-    -- ^ The transaction attempts to mint value of a currency without running
-    --   the currency's minting policy.
-    | TransactionFeeTooLow V.Value V.Value
-    -- ^ The transaction fee is lower than the minimum acceptable fee.
-    | CardanoLedgerValidationError String
-    -- ^ An error from Cardano.Ledger validation
-    deriving (Eq, Show, Generic)
-
-instance FromJSON ValidationError
-instance ToJSON ValidationError
-deriving via (PrettyShow ValidationError) instance Pretty ValidationError
-
-data ValidationPhase = Phase1 | Phase2 deriving (Eq, Show, Generic, FromJSON, ToJSON)
-deriving via (PrettyShow ValidationPhase) instance Pretty ValidationPhase
-type ValidationErrorInPhase = (ValidationPhase, ValidationError)
 
 -- | A monad for running transaction validation inside, which is an instance of 'ValidationMonad'.
 newtype Validation a = Validation { _runValidation :: (ReaderT ValidationCtx (ExceptT ValidationError (Writer [ScriptValidationEvent]))) a }
@@ -217,7 +160,7 @@ validateTransactionOffChain :: ValidationMonad m
 validateTransactionOffChain t = do
     checkValuePreserved t
     checkPositiveValues t
---    checkMinAdaInTxOutputs t
+    checkMinAdaInTxOutputs t
     checkFeeIsAda t
 
     -- see note [Minting of Ada]
@@ -406,9 +349,13 @@ minLovelaceTxOut = Lovelace minTxOut
 -- slightly more expensive than 1 Ada. So, to be on the safe side, we set the
 -- minimum Ada of each transaction output to 2 Ada.
 checkMinAdaInTxOutputs :: ValidationMonad m => Tx -> m ()
-checkMinAdaInTxOutputs t@Tx { txOutputs } =
-    for_ txOutputs $ \txOut ->
-        if Ada.fromValue (txOutValue txOut) >= minAdaTxOut
+checkMinAdaInTxOutputs t@Tx { txOutputs } = do
+    pparams <- vctxProtocolParams <$> ask
+    for_ txOutputs $ \txOut -> do
+        let
+            minAdaTxOut' = either (const minAdaTxOut) id $
+                fromPlutusTxOut' txOut <&> \txOut' -> Ada.fromValue $ evaluateMinLovelaceOutput pparams txOut'
+        if Ada.fromValue (txOutValue txOut) >= minAdaTxOut'
             then pure ()
             else throwError $ ValueContainsLessThanMinAda t txOut
 

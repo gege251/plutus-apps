@@ -17,6 +17,7 @@
 module Wallet.Emulator.Chain where
 
 import Cardano.Api (EraInMode (AlonzoEraInCardanoMode))
+import Cardano.Api.Shelley (ProtocolParameters)
 import Control.Applicative ((<|>))
 import Control.Lens hiding (index)
 import Control.Monad.Freer
@@ -100,15 +101,15 @@ getCurrentSlot = send GetCurrentSlot
 
 type ChainEffs = '[State ChainState, LogMsg ChainEvent]
 
-handleControlChain :: Members ChainEffs effs => SlotConfig -> ChainControlEffect ~> Eff effs
-handleControlChain slotCfg = \case
+handleControlChain :: Members ChainEffs effs => SlotConfig -> ProtocolParameters -> ChainControlEffect ~> Eff effs
+handleControlChain slotCfg pparams = \case
     ProcessBlock -> do
         st <- get
         let pool  = st ^. txPool
             slot  = st ^. currentSlot
             idx   = st ^. index
             ValidatedBlock block events rest =
-                validateBlock slotCfg slot idx pool
+                validateBlock slotCfg slot idx pparams pool
 
         let st' = st & txPool .~ rest
                      & addBlock block
@@ -145,8 +146,8 @@ data ValidatedBlock = ValidatedBlock
 -- | Validate a block given the current slot and UTxO index, returning the valid
 --   transactions, success/failure events, remaining transactions and the
 --   updated UTxO set.
-validateBlock :: SlotConfig -> Slot -> Index.UtxoIndex -> TxPool -> ValidatedBlock
-validateBlock slotCfg slot@(Slot s) idx txns =
+validateBlock :: SlotConfig -> Slot -> Index.UtxoIndex -> ProtocolParameters -> TxPool -> ValidatedBlock
+validateBlock slotCfg slot@(Slot s) idx pparams txns =
     let
         -- Select those transactions that can be validated in the
         -- current slot
@@ -154,7 +155,7 @@ validateBlock slotCfg slot@(Slot s) idx txns =
 
         -- Validate eligible transactions, updating the UTXO index each time
         processed =
-            flip S.evalState (Index.ValidationCtx idx slotCfg) $ for eligibleTxns $ \tx -> do
+            flip S.evalState (Index.ValidationCtx idx slotCfg pparams) $ for eligibleTxns $ \tx -> do
                 (err, events_) <- validateEm slot cUtxoIndex tx
                 pure (tx, err, events_)
 
@@ -203,7 +204,7 @@ validateEm
     -> CardanoTx
     -> m (Maybe Index.ValidationErrorInPhase, [ScriptValidationEvent])
 validateEm h cUtxoIndex txn = do
-    ctx@(Index.ValidationCtx idx _) <- S.get
+    ctx@(Index.ValidationCtx idx _ _) <- S.get
     let ((e, idx'), events) = txn & mergeCardanoTxWith
             (\tx -> Index.runValidation (Index.validateTransaction h tx) ctx)
             (\tx -> ((validateL h cUtxoIndex tx, idx), []))

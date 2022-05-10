@@ -71,6 +71,7 @@ module Plutus.PAB.Simulator(
     , waitForValidatedTxCount
     ) where
 
+import Cardano.Api.Shelley (ProtocolParameters)
 import Cardano.Wallet.Mock.Handlers qualified as MockWallet
 import Control.Concurrent (forkIO)
 import Control.Concurrent.STM (STM, TQueue, TVar)
@@ -112,7 +113,7 @@ import Plutus.ChainIndex.Emulator qualified as ChainIndex
 import Plutus.PAB.Core (EffectHandlers (EffectHandlers, handleContractDefinitionEffect, handleContractEffect, handleContractStoreEffect, handleLogMessages, handleServicesEffects, initialiseEnvironment, onShutdown, onStartup))
 import Plutus.PAB.Core qualified as Core
 import Plutus.PAB.Core.ContractInstance.BlockchainEnv qualified as BlockchainEnv
-import Plutus.PAB.Core.ContractInstance.STM (Activity, BlockchainEnv, OpenEndpoint)
+import Plutus.PAB.Core.ContractInstance.STM (Activity, BlockchainEnv (beProtocolParameters), OpenEndpoint)
 import Plutus.PAB.Core.ContractInstance.STM qualified as Instances
 import Plutus.PAB.Effects.Contract (ContractStore)
 import Plutus.PAB.Effects.Contract qualified as Contract
@@ -218,7 +219,7 @@ mkSimulatorHandlers slotCfg handleContractEffect =
             interpret handleContractStore
         , handleContractEffect
         , handleLogMessages = handleLogSimulator @t
-        , handleServicesEffects = handleServicesSimulator @t slotCfg
+        , handleServicesEffects = handleServicesSimulator @t slotCfg def
         , handleContractDefinitionEffect =
             interpret $ \case
                 Contract.AddDefinition _ -> pure () -- not supported
@@ -261,11 +262,12 @@ handleServicesSimulator ::
     , Member (Error PABError) effs
     )
     => SlotConfig
+    -> ProtocolParameters
     -> Wallet
     -> Maybe ContractInstanceId
     -> Eff (WalletEffect ': ChainIndexQueryEffect ': NodeClientEffect ': effs)
     ~> Eff effs
-handleServicesSimulator slotCfg wallet _ =
+handleServicesSimulator slotCfg pparams wallet _ =
     let makeTimedChainIndexEvent wllt =
             interpret (mapLog @_ @(PABMultiAgentMsg t) EmulatorMsg)
             . reinterpret (Core.timed @EmulatorEvent')
@@ -280,7 +282,7 @@ handleServicesSimulator slotCfg wallet _ =
         makeTimedChainEvent
         . interpret (Core.handleBlockchainEnvReader @t @(SimulatorState t))
         . interpret (Core.handleUserEnvReader @t @(SimulatorState t))
-        . reinterpretN @'[Reader (SimulatorState t), Reader BlockchainEnv, LogMsg _] (handleChainEffect @t slotCfg)
+        . reinterpretN @'[Reader (SimulatorState t), Reader BlockchainEnv, LogMsg _] (handleChainEffect @t slotCfg pparams)
 
         . interpret (Core.handleUserEnvReader @t @(SimulatorState t))
         . reinterpret2 (handleNodeClient @t slotCfg wallet)
@@ -450,21 +452,23 @@ handleChainControl ::
     => SlotConfig
     -> ChainControlEffect
     ~> Eff effs
-handleChainControl slotCfg = \case
-    Chain.ProcessBlock -> do
-        blockchainEnv <- ask @BlockchainEnv
-        instancesState <- ask @Instances.InstancesState
-        (txns, slot) <- runChainEffects @t @_ slotCfg ((,) <$> Chain.processBlock <*> Chain.getCurrentSlot)
+handleChainControl slotCfg eff = do
+    blockchainEnv <- ask @BlockchainEnv
+    let pparams = beProtocolParameters blockchainEnv
+    case eff of
+        Chain.ProcessBlock -> do
+            instancesState <- ask @Instances.InstancesState
+            (txns, slot) <- runChainEffects @t @_ slotCfg pparams ((,) <$> Chain.processBlock <*> Chain.getCurrentSlot)
 
-        -- Adds a new tip on the chain index given the block and slot number
-        runChainIndexEffects @t $ do
-          currentTip <- getTip
-          appendNewTipBlock currentTip txns slot
+            -- Adds a new tip on the chain index given the block and slot number
+            runChainIndexEffects @t $ do
+              currentTip <- getTip
+              appendNewTipBlock currentTip txns slot
 
-        void $ liftIO $ STM.atomically $ BlockchainEnv.processMockBlock instancesState blockchainEnv txns slot
+            void $ liftIO $ STM.atomically $ BlockchainEnv.processMockBlock instancesState blockchainEnv txns slot
 
-        pure txns
-    Chain.ModifySlot f -> runChainEffects @t @_ slotCfg (Chain.modifySlot f)
+            pure txns
+        Chain.ModifySlot f -> runChainEffects @t @_ slotCfg pparams (Chain.modifySlot f)
 
 runChainEffects ::
     forall t a effs.
@@ -473,9 +477,10 @@ runChainEffects ::
     , LastMember IO effs
     )
     => SlotConfig
+    -> ProtocolParameters
     -> Eff (Chain.ChainEffect ': Chain.ChainControlEffect ': Chain.ChainEffs) a
     -> Eff effs a
-runChainEffects slotCfg action = do
+runChainEffects slotCfg pparams action = do
     SimulatorState{_chainState} <- ask @(SimulatorState t)
     (a, logs) <- liftIO $ STM.atomically $ do
                         oldState <- STM.readTVar _chainState
@@ -484,7 +489,7 @@ runChainEffects slotCfg action = do
                                 $ runWriter @[LogMessage Chain.ChainEvent]
                                 $ reinterpret @(LogMsg Chain.ChainEvent) @(Writer [LogMessage Chain.ChainEvent]) (handleLogWriter _singleton)
                                 $ runState oldState
-                                $ interpret (Chain.handleControlChain slotCfg)
+                                $ interpret (Chain.handleControlChain slotCfg pparams)
                                 $ interpret (Chain.handleChain slotCfg) action
                         STM.writeTVar _chainState newState
                         pure (a, logs)
@@ -555,11 +560,12 @@ handleChainEffect ::
     , Member (LogMsg Chain.ChainEvent) effs
     )
     => SlotConfig
+    -> ProtocolParameters
     -> Chain.ChainEffect
     ~> Eff effs
-handleChainEffect slotCfg = \case
-    Chain.QueueTx tx     -> runChainEffects @t slotCfg $ Chain.queueTx tx
-    Chain.GetCurrentSlot -> runChainEffects @t slotCfg Chain.getCurrentSlot
+handleChainEffect slotCfg pparams = \case
+    Chain.QueueTx tx     -> runChainEffects @t slotCfg pparams $ Chain.queueTx tx
+    Chain.GetCurrentSlot -> runChainEffects @t slotCfg pparams Chain.getCurrentSlot
     Chain.GetSlotConfig  -> pure slotCfg
 
 handleChainIndexEffect ::
@@ -751,7 +757,7 @@ addWalletWith funds = do
         STM.writeTVar _agentStates newWallets
     _ <- handleAgentThread (knownWallet 2) Nothing
             $ Modify.wrapError WalletError
-            $ MockWallet.distributeNewWalletFunds funds (CW.paymentPubKeyHash mockWallet)
+            $ MockWallet.distributeNewWalletFunds def funds (CW.paymentPubKeyHash mockWallet)
     pure (Wallet.toMockWallet mockWallet, CW.paymentPubKeyHash mockWallet)
 
 -- | Retrieve the balances of all the entities in the simulator.
@@ -782,8 +788,8 @@ payToWallet :: forall t. Wallet -> Wallet -> Value -> Simulation t CardanoTx
 payToWallet source target = payToPaymentPublicKeyHash source (Emulator.mockWalletPaymentPubKeyHash target)
 
 -- | Make a payment from one wallet to a public key address
-payToPaymentPublicKeyHash :: forall t. Wallet -> PaymentPubKeyHash -> Value -> Simulation t CardanoTx
+payToPaymentPublicKeyHash :: forall t.  Wallet -> PaymentPubKeyHash -> Value -> Simulation t CardanoTx
 payToPaymentPublicKeyHash source target amount =
     handleAgentThread source Nothing
         $ flip (handleError @WAPI.WalletAPIError) (throwError . WalletError)
-        $ WAPI.payToPaymentPublicKeyHash WAPI.defaultSlotRange amount target
+        $ WAPI.payToPaymentPublicKeyHash def WAPI.defaultSlotRange amount target

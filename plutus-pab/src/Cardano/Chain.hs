@@ -12,6 +12,7 @@
 
 module Cardano.Chain where
 
+import Cardano.Api.Shelley (ProtocolParameters)
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Lens hiding (index)
@@ -83,15 +84,15 @@ handleControlChain ::
      , Member (LogMsg EC.ChainEvent) effs
      , LastMember m effs
      , MonadIO m )
-  => SlotConfig -> EC.ChainControlEffect ~> Eff effs
-handleControlChain slotCfg = \case
+  => SlotConfig -> ProtocolParameters -> EC.ChainControlEffect ~> Eff effs
+handleControlChain slotCfg pparams = \case
     EC.ProcessBlock -> do
         st <- get
         let pool  = st ^. txPool
             slot  = st ^. currentSlot
             idx   = st ^. index
             EC.ValidatedBlock block events rest =
-                EC.validateBlock slotCfg slot idx pool
+                EC.validateBlock slotCfg slot idx pparams pool
 
         let st' = st & txPool .~ rest
                      & tip    ?~ block

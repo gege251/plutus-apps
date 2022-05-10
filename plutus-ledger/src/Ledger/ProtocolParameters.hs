@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Plutus.Contract.ProtocolParameters (ProtocolParameters(..)) where
+module Ledger.ProtocolParameters (ProtocolParameters(..)) where
 
 import Cardano.Api.Shelley
 import Data.Default (Default, def)

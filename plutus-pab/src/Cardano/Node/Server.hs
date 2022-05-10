@@ -8,6 +8,8 @@ module Cardano.Node.Server
     ( main
     ) where
 
+import Cardano.Api.ProtocolParameters (readProtocolParameters)
+import Cardano.Api.Shelley (ProtocolParameters)
 import Cardano.BM.Data.Trace (Trace)
 import Cardano.Node.API (API)
 import Cardano.Node.Mock
@@ -37,14 +39,15 @@ import Wallet.Emulator.Wallet (fromWalletNumber)
 app ::
     Trace IO PABServerLogMsg
  -> SlotConfig
+ -> ProtocolParameters
  -> Client.TxSendHandle
  -> MVar AppState
  -> Application
-app trace slotCfg clientHandler stateVar =
+app trace slotCfg pparams clientHandler stateVar =
     serve (Proxy @API) $
     hoistServer
         (Proxy @API)
-        (liftIO . processChainEffects trace slotCfg (Just clientHandler) stateVar)
+        (liftIO . processChainEffects trace slotCfg pparams (Just clientHandler) stateVar)
         (healthcheck :<|> consumeEventHistory stateVar)
 
 data Ctx = Ctx { serverHandler :: Server.ServerHandler
@@ -58,7 +61,10 @@ main trace PABServerConfig { pscBaseUrl
                             , pscKeptBlocks
                             , pscSlotConfig
                             , pscInitialTxWallets
-                            , pscSocketPath } availability = LM.runLogEffects trace $ do
+                            , pscSocketPath
+                            , pscProtocolParametersJsonPath } availability = LM.runLogEffects trace $ do
+
+    protocolParameters <- liftIO $ readProtocolParameters pscProtocolParametersJsonPath
 
     -- make initial distribution of 1 billion Ada to all configured wallets
     let dist = Map.fromList $ zip (fromWalletNumber <$> pscInitialTxWallets) (repeat (Ada.adaValueOf 1000_000_000))
@@ -67,7 +73,7 @@ main trace PABServerConfig { pscBaseUrl
             { _chainState = initialState
             , _eventHistory = mempty
             }
-    serverHandler <- liftIO $ Server.runServerNode trace pscSocketPath pscKeptBlocks (_chainState appState) pscSlotConfig
+    serverHandler <- liftIO $ Server.runServerNode trace pscSocketPath pscKeptBlocks (_chainState appState) pscSlotConfig protocolParameters
     serverState   <- liftIO $ newMVar appState
     handleDelayEffect $ delayThread (2 :: Second)
     clientHandler <- liftIO $ Client.runTxSender pscSocketPath
@@ -81,7 +87,7 @@ main trace PABServerConfig { pscBaseUrl
     runSlotCoordinator ctx
 
     logInfo $ StartingPABServer $ baseUrlPort pscBaseUrl
-    liftIO $ Warp.runSettings warpSettings $ app trace pscSlotConfig clientHandler serverState
+    liftIO $ Warp.runSettings warpSettings $ app trace pscSlotConfig protocolParameters clientHandler serverState
 
         where
             warpSettings = Warp.defaultSettings & Warp.setPort (baseUrlPort pscBaseUrl) & Warp.setBeforeMainLoop (available availability)

@@ -17,6 +17,7 @@ module Cardano.Wallet.Mock.Handlers
     , distributeNewWalletFunds
     ) where
 
+import Cardano.Api.Shelley qualified as Api (ProtocolParameters)
 import Cardano.BM.Data.Trace (Trace)
 import Cardano.Node.Client qualified as NodeClient
 import Cardano.Node.Types (ChainSyncHandle)
@@ -89,10 +90,11 @@ distributeNewWalletFunds :: forall effs.
     , Member (Error WalletAPIError) effs
     , Member (LogMsg Text) effs
     )
-    => Maybe Ada.Ada
+    => Api.ProtocolParameters
+    -> Maybe Ada.Ada
     -> PaymentPubKeyHash
     -> Eff effs CardanoTx
-distributeNewWalletFunds funds = WAPI.payToPaymentPublicKeyHash WAPI.defaultSlotRange
+distributeNewWalletFunds pparams funds = WAPI.payToPaymentPublicKeyHash pparams WAPI.defaultSlotRange
     (maybe (Ada.adaValueOf 10_000) Ada.toValue funds)
 
 newWallet :: forall m effs. (LastMember m effs, MonadIO m) => Eff effs MockWallet
@@ -112,8 +114,8 @@ handleMultiWallet :: forall m effs.
     , LastMember m effs
     , MonadIO m
     )
-    => MultiWalletEffect ~> Eff effs
-handleMultiWallet = \case
+    => Api.ProtocolParameters -> MultiWalletEffect ~> Eff effs
+handleMultiWallet pparams = \case
     MultiWallet (Wallet.Wallet _ walletId) action -> do
         wallets <- get @Wallets
         case Map.lookup walletId wallets of
@@ -140,7 +142,7 @@ handleMultiWallet = \case
         _ <- evalState sourceWallet $
             interpret (mapLog @TxBalanceMsg @WalletMsg Balancing)
             $ interpret Wallet.handleWallet
-            $ distributeNewWalletFunds funds pkh
+            $ distributeNewWalletFunds pparams funds pkh
         return $ WalletInfo{wiWallet = Wallet.toMockWallet mockWallet, wiPaymentPubKeyHash = pkh}
     GetWalletInfo wllt -> do
         wallets <- get @Wallets
@@ -156,9 +158,10 @@ processWalletEffects ::
     -> ClientEnv          -- ^ chain index client
     -> MVar Wallets   -- ^ wallets state
     -> SlotConfig
+    -> Api.ProtocolParameters
     -> Eff (WalletEffects IO) a -- ^ wallet effect
     -> m a
-processWalletEffects trace txSendHandle chainSyncHandle chainIndexEnv mVarState slotCfg action = do
+processWalletEffects trace txSendHandle chainSyncHandle chainIndexEnv mVarState slotCfg pparams action = do
     oldState <- liftIO $ takeMVar mVarState
     result <- liftIO $ runWalletEffects trace
                                         txSendHandle
@@ -166,6 +169,7 @@ processWalletEffects trace txSendHandle chainSyncHandle chainIndexEnv mVarState 
                                         chainIndexEnv
                                         oldState
                                         slotCfg
+                                        pparams
                                         action
     case result of
         Left e -> do
@@ -183,10 +187,11 @@ runWalletEffects ::
     -> ClientEnv -- ^ chain index client
     -> Wallets -- ^ current state
     -> SlotConfig
+    -> Api.ProtocolParameters
     -> Eff (WalletEffects IO) a -- ^ wallet effect
     -> IO (Either ServerError (a, Wallets))
-runWalletEffects trace txSendHandle chainSyncHandle chainIndexEnv wallets slotCfg action =
-    reinterpret handleMultiWallet action
+runWalletEffects trace txSendHandle chainSyncHandle chainIndexEnv wallets slotCfg pparams action =
+    reinterpret (handleMultiWallet pparams) action
     & interpret (LM.handleLogMsgTrace trace)
     & reinterpret2 (NodeClient.handleNodeClientClient slotCfg)
     & runReader chainSyncHandle

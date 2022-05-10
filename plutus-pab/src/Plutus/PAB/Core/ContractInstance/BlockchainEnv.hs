@@ -13,7 +13,6 @@ module Plutus.PAB.Core.ContractInstance.BlockchainEnv(
 import Cardano.Api (BlockInMode (..), ChainPoint (..))
 import Cardano.Api qualified as C
 import Cardano.Api.NetworkId.Extra (NetworkIdWrapper (NetworkIdWrapper))
-import Cardano.Api.ProtocolParameters
 import Cardano.Node.Types (NodeMode (..))
 import Cardano.Protocol.Socket.Client (ChainSyncEvent (..))
 import Cardano.Protocol.Socket.Client qualified as Client
@@ -21,6 +20,7 @@ import Cardano.Protocol.Socket.Mock.Client qualified as MockClient
 import Data.Map qualified as Map
 import Data.Monoid (Last (..), Sum (..))
 import Ledger (Block, Slot (..), TxId (..))
+import Ledger.ProtocolParameters
 import Plutus.PAB.Core.ContractInstance.STM (BlockchainEnv (..), InstanceClientEnv (..), InstancesState,
                                              OpenTxOutProducedRequest (..), OpenTxOutSpentRequest (..),
                                              emptyBlockchainEnv)

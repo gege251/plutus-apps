@@ -55,6 +55,7 @@ module Ledger.Generators(
     ) where
 
 import Cardano.Api qualified as C
+import Cardano.Api.Shelley (ProtocolParameters)
 import Control.Monad (replicateM)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Reader (runReaderT)
@@ -88,6 +89,7 @@ import Ledger qualified
 import Ledger.CardanoWallet qualified as CW
 import Ledger.Fee (FeeConfig (fcScriptsFeeFactor), calcFees)
 import Ledger.Index qualified as Index
+import Ledger.ProtocolParameters ()
 import Ledger.TimeSlot (SlotConfig)
 import Ledger.TimeSlot qualified as TimeSlot
 import Ledger.Typed.Scripts qualified as Scripts
@@ -133,14 +135,15 @@ constantFee = def { fcScriptsFeeFactor = 0 }
 --   plutus-ledger (in particular, 'Ledger.Tx.unspentOutputs') we note the
 --   unspent outputs of the chain when it is first created.
 data Mockchain = Mockchain {
-    mockchainInitialTxPool :: [Tx],
-    mockchainUtxo          :: Map TxOutRef TxOut,
-    mockchainSlotConfig    :: SlotConfig
+    mockchainInitialTxPool      :: [Tx],
+    mockchainUtxo               :: Map TxOutRef TxOut,
+    mockchainSlotConfig         :: SlotConfig,
+    mockchainProtocolParameters :: ProtocolParameters
     } deriving Show
 
 -- | The empty mockchain.
 emptyChain :: Mockchain
-emptyChain = Mockchain [] Map.empty def
+emptyChain = Mockchain [] Map.empty def def
 
 -- | Generate a mockchain.
 --
@@ -155,7 +158,8 @@ genMockchain' gm = do
     pure Mockchain {
         mockchainInitialTxPool = [txn],
         mockchainUtxo = Map.fromList $ first (TxOutRef tid) <$> zip [0..] ot,
-        mockchainSlotConfig = slotCfg
+        mockchainSlotConfig = slotCfg,
+        mockchainProtocolParameters = def
         }
 
 -- | Generate a mockchain using the default 'GeneratorModel'.
@@ -194,7 +198,7 @@ genValidTransaction' :: MonadGen m
     -> FeeConfig
     -> Mockchain
     -> m Tx
-genValidTransaction' g feeCfg (Mockchain _ ops _) = do
+genValidTransaction' g feeCfg (Mockchain _ ops _ _) = do
     -- Take a random number of UTXO from the input
     nUtxo <- if Map.null ops
                 then Gen.discard
@@ -404,10 +408,10 @@ assertValid tx mc = Hedgehog.assert $ isNothing $ validateMockchain mc tx
 
 -- | Validate a transaction in a mockchain.
 validateMockchain :: Mockchain -> Tx -> Maybe Index.ValidationError
-validateMockchain (Mockchain txPool _ slotCfg) tx = result where
+validateMockchain (Mockchain txPool _ slotCfg pparams) tx = result where
     h      = 1
     idx    = Index.initialise [map Valid txPool]
-    result = fmap snd $ fst $ fst $ Index.runValidation (Index.validateTransaction h tx) (ValidationCtx idx slotCfg)
+    result = fmap snd $ fst $ fst $ Index.runValidation (Index.validateTransaction h tx) (ValidationCtx idx slotCfg pparams)
 
 {- | Split a value into max. n positive-valued parts such that the sum of the
      parts equals the original value. Each part should contain the required
@@ -436,7 +440,8 @@ genTxInfo chain = do
     tx <- genValidTransaction chain
     let idx = UtxoIndex $ mockchainUtxo chain
     let slotCfg = mockchainSlotConfig chain
-    let (res, _) = runWriter $ runExceptT $ runReaderT (_runValidation (Index.mkTxInfo tx)) (ValidationCtx idx slotCfg)
+    let pparams = mockchainProtocolParameters chain
+    let (res, _) = runWriter $ runExceptT $ runReaderT (_runValidation (Index.mkTxInfo tx)) (ValidationCtx idx slotCfg pparams)
     either (const Gen.discard) pure res
 
 genScriptPurposeSpending :: MonadGen m => TxInfo -> m Contexts.ScriptPurpose

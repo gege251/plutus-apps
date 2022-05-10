@@ -78,8 +78,8 @@ import Data.Set qualified as Set
 import GHC.Records (HasField (..))
 import Ledger.Address qualified as P
 import Ledger.Crypto qualified as P
-import Ledger.Index (EmulatorEra)
-import Ledger.Index qualified as P
+import Ledger.Index.Internal (EmulatorEra)
+import Ledger.Index.Internal qualified as P
 import Ledger.Tx qualified as P
 import Ledger.Tx.CardanoAPI qualified as P
 import Ledger.Value qualified as P

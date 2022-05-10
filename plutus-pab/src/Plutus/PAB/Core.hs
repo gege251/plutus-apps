@@ -84,6 +84,7 @@ module Plutus.PAB.Core
     , timed
     ) where
 
+import Cardano.Api.Shelley (ProtocolParameters)
 import Control.Applicative (Alternative ((<|>)))
 import Control.Concurrent.STM (STM)
 import Control.Concurrent.STM qualified as STM
@@ -336,11 +337,11 @@ callEndpointOnInstance' instanceID ep value = do
         $ Instances.callEndpointOnInstance state (EndpointDescription ep) (JSON.toJSON value) instanceID
 
 -- | Make a payment to a payment public key.
-payToPaymentPublicKey :: ContractInstanceId -> Wallet -> PaymentPubKeyHash -> Value -> PABAction t env CardanoTx
-payToPaymentPublicKey cid source target amount =
+payToPaymentPublicKey :: ProtocolParameters -> ContractInstanceId -> Wallet -> PaymentPubKeyHash -> Value -> PABAction t env CardanoTx
+payToPaymentPublicKey pparams cid source target amount =
     handleAgentThread source (Just cid)
         $ Modify.wrapError WalletError
-        $ WAPI.payToPaymentPublicKeyHash WAPI.defaultSlotRange amount target
+        $ WAPI.payToPaymentPublicKeyHash pparams WAPI.defaultSlotRange amount target
 
 -- | Effects available to contract instances with access to external services.
 type ContractInstanceEffects t env effs =

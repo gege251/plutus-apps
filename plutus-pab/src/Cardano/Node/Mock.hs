@@ -8,6 +8,7 @@
 
 module Cardano.Node.Mock where
 
+import Cardano.Api.Shelley (ProtocolParameters)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar (MVar, modifyMVar_, putMVar, takeMVar)
 import Control.Lens (over, set, unto, view)
@@ -69,11 +70,12 @@ addTx tx = do
 runChainEffects ::
  Trace IO PABServerLogMsg
  -> SlotConfig
+ -> ProtocolParameters
  -> Maybe Client.TxSendHandle
  -> MVar AppState
  -> Eff (NodeServerEffects IO) a
  -> IO ([LogMessage PABServerLogMsg], a)
-runChainEffects trace slotCfg clientHandler stateVar eff = do
+runChainEffects trace slotCfg pparams clientHandler stateVar eff = do
     oldAppState <- liftIO $ takeMVar stateVar
     ((a, events), newState) <- liftIO
             $ processBlock eff
@@ -91,7 +93,7 @@ runChainEffects trace slotCfg clientHandler stateVar eff = do
             runChain = interpret (mapLog ProcessingChainEvent)
                      . reinterpret (handleChain slotCfg)
                      . interpret (mapLog ProcessingChainEvent)
-                     . reinterpret (handleControlChain slotCfg)
+                     . reinterpret (handleControlChain slotCfg pparams)
 
             mergeState = interpret (handleZoomedState chainState)
 
@@ -102,12 +104,13 @@ runChainEffects trace slotCfg clientHandler stateVar eff = do
 processChainEffects ::
     Trace IO PABServerLogMsg
     -> SlotConfig
+    -> ProtocolParameters
     -> Maybe Client.TxSendHandle
     -> MVar AppState
     -> Eff (NodeServerEffects IO) a
     -> IO a
-processChainEffects trace slotCfg clientHandler stateVar eff = do
-    (events, result) <- liftIO $ runChainEffects trace slotCfg clientHandler stateVar eff
+processChainEffects trace slotCfg pparams clientHandler stateVar eff = do
+    (events, result) <- liftIO $ runChainEffects trace slotCfg pparams clientHandler stateVar eff
     LM.runLogEffects trace $ traverse_ (\(LogMessage _ chainEvent) -> logDebug chainEvent) events
     liftIO $
         modifyMVar_

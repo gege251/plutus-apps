@@ -61,7 +61,6 @@ import Control.Monad (unless, void)
 import Control.Monad.Freer (Eff, Member)
 import Control.Monad.Freer.Error (Error, throwError)
 import Control.Monad.Freer.Extras.Log (LogMsg, logWarn)
-import Control.Monad.Freer.Reader (Reader, ask)
 import Data.Default (Default (def))
 import Data.Text (Text)
 import Data.Void (Void)
@@ -85,16 +84,14 @@ payToPaymentPublicKeyHash ::
     ( Member WalletEffect effs
     , Member (Error WalletAPIError) effs
     , Member (LogMsg Text) effs
-    , Member (Reader ProtocolParameters) effs
     )
-    => SlotRange -> Value -> PaymentPubKeyHash -> Eff effs CardanoTx
-payToPaymentPublicKeyHash range v pk = do
+    => ProtocolParameters -> SlotRange -> Value -> PaymentPubKeyHash -> Eff effs CardanoTx
+payToPaymentPublicKeyHash pparams range v pk = do
     let constraints = Constraints.mustPayToPubKey pk v
                    <> Constraints.mustValidateIn (TimeSlot.slotRangeToPOSIXTimeRange def range)
     utx <- either (throwError . PaymentMkTxError)
                   pure
                   (Constraints.mkTx @Void mempty constraints)
-    pparams <- ask @ProtocolParameters
     adjustedUtx <- either (throwError . ToCardanoError) pure (Constraints.adjustUnbalancedTx pparams utx)
     unless (utx == adjustedUtx) $
       logWarn @Text $ "Wallet.API.payToPublicKeyHash: "
@@ -107,10 +104,9 @@ payToPaymentPublicKeyHash_ ::
     ( Member WalletEffect effs
     , Member (Error WalletAPIError) effs
     , Member (LogMsg Text) effs
-    , Member (Reader ProtocolParameters) effs
     )
-    => SlotRange -> Value -> PaymentPubKeyHash -> Eff effs ()
-payToPaymentPublicKeyHash_ r v = void . payToPaymentPublicKeyHash r v
+    => ProtocolParameters -> SlotRange -> Value -> PaymentPubKeyHash -> Eff effs ()
+payToPaymentPublicKeyHash_ pparams r v = void . payToPaymentPublicKeyHash pparams r v
 
 -- | Add the wallet's signature to the transaction and submit it. Returns
 --   the transaction with the wallet's signature.

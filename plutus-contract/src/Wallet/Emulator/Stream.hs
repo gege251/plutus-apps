@@ -46,11 +46,11 @@ import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import Ledger.AddressMap qualified as AM
 import Ledger.Blockchain (Block, OnChainTx (Valid))
+import Ledger.ProtocolParameters ()
 import Ledger.Slot (Slot)
 import Ledger.Tx (CardanoTx (..), Tx)
 import Ledger.Value (Value)
 import Plutus.ChainIndex (ChainIndexError)
-import Plutus.Contract.ProtocolParameters ()
 import Streaming (Stream)
 import Streaming qualified as S
 import Streaming.Prelude (Of)

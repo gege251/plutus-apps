@@ -82,7 +82,6 @@ import Ledger.Constraints.TxConstraints (ScriptInputConstraint (ScriptInputConst
                                          TxConstraints (TxConstraints, txConstraintFuns, txConstraints, txOwnInputs, txOwnOutputs))
 
 import Ledger.Crypto (pubKeyHash)
-import Ledger.Index (minAdaTxOut)
 import Ledger.Orphans ()
 import Ledger.Scripts (Datum (Datum), DatumHash, MintingPolicy, MintingPolicyHash, Redeemer, Validator, ValidatorHash,
                        datumHash, mintingPolicyHash, validatorHash)

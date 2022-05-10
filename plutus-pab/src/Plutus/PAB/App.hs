@@ -29,7 +29,6 @@ module Plutus.PAB.App(
     handleContractDefinition
     ) where
 
-import Cardano.Api.ProtocolParameters ()
 import Cardano.Api.Shelley (ProtocolParameters)
 import Cardano.BM.Trace (Trace, logDebug)
 import Cardano.ChainIndex.Types qualified as ChainIndex
@@ -61,6 +60,7 @@ import Database.Beam.Migrate.Simple (autoMigrate)
 import Database.Beam.Sqlite qualified as Sqlite
 import Database.Beam.Sqlite.Migrate qualified as Sqlite
 import Database.SQLite.Simple qualified as Sqlite
+import Ledger.ProtocolParameters ()
 import Network.HTTP.Client (managerModifyRequest, newManager, setRequestIgnoreStatus)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Plutus.ChainIndex.Client qualified as ChainIndex

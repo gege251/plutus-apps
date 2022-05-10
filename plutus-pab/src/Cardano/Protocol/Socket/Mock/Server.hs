@@ -9,6 +9,7 @@
 
 module Cardano.Protocol.Socket.Mock.Server where
 
+import Cardano.Api.Shelley (ProtocolParameters)
 import Cardano.BM.Data.Trace (Trace)
 import Cardano.Node.Types (PABServerLogMsg (..))
 import Data.ByteString.Lazy qualified as LBS
@@ -147,15 +148,16 @@ handleCommand ::
  -> CommandChannel
  -> MVar MockNodeServerChainState
  -> SlotConfig
+ -> ProtocolParameters
  -> m ()
-handleCommand trace CommandChannel {ccCommand, ccResponse} mvChainState slotCfg =
+handleCommand trace CommandChannel {ccCommand, ccResponse} mvChainState slotCfg pparams =
     liftIO (atomically $ readTQueue ccCommand) >>= \case
         AddTx tx     -> do
             liftIO $ modifyMVar_ mvChainState (pure . over txPool (EmulatorTx tx :))
         ModifySlot f -> liftIO $ do
             state <- liftIO $ takeMVar mvChainState
             (s, nextState') <- liftIO $ Chain.modifySlot f
-                  & interpret (handleControlChain slotCfg)
+                  & interpret (handleControlChain slotCfg pparams)
                   & interpret (LM.handleLogMsgTraceMap ProcessingChainEvent trace)
                   & runState state
                   & runM
@@ -165,7 +167,7 @@ handleCommand trace CommandChannel {ccCommand, ccResponse} mvChainState slotCfg 
         ProcessBlock -> liftIO $ do
             state <- liftIO $ takeMVar mvChainState
             (block, nextState') <- liftIO $ Chain.processBlock
-                  & interpret (handleControlChain slotCfg)
+                  & interpret (handleControlChain slotCfg pparams)
                   & interpret (LM.handleLogMsgTraceMap ProcessingChainEvent trace)
                   & runState state
                   & runM
@@ -182,13 +184,14 @@ runServerNode ::
  -> Integer
  -> MockNodeServerChainState
  -> SlotConfig
+ -> ProtocolParameters
  -> m ServerHandler
-runServerNode trace shSocketPath k initialState slotCfg = liftIO $ do
+runServerNode trace shSocketPath k initialState slotCfg pparams = liftIO $ do
     serverState      <- newMVar initialState
     shCommandChannel <- CommandChannel <$> newTQueueIO <*> newTQueueIO
     globalChannel    <- getChannel serverState
     void $ forkIO . void    $ protocolLoop        shSocketPath     serverState
-    void $ forkIO . forever $ handleCommand trace shCommandChannel serverState slotCfg
+    void $ forkIO . forever $ handleCommand trace shCommandChannel serverState slotCfg pparams
     void                    $ pruneChain k globalChannel
     pure $ ServerHandler { shSocketPath, shCommandChannel }
 

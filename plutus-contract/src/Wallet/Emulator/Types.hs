@@ -110,6 +110,6 @@ processEmulated slotCfg pparams act =
         & reinterpret2 @ChainEffect @(State ChainState) @(LogMsg ChainEvent) (handleChain slotCfg)
         & interpret (Eff.handleZoomedState chainState)
         & interpret (mapLog (review chainEvent))
-        & reinterpret2 @ChainControlEffect @(State ChainState) @(LogMsg ChainEvent) (handleControlChain slotCfg)
+        & reinterpret2 @ChainControlEffect @(State ChainState) @(LogMsg ChainEvent) (handleControlChain slotCfg pparams)
         & interpret (Eff.handleZoomedState chainState)
         & interpret (mapLog (review chainEvent))
