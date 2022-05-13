@@ -6,15 +6,15 @@
 
 module Main where
 
-import Cardano.Api (ChainPoint (ChainPoint, ChainPointAtGenesis), NetworkId (Mainnet, Testnet),
-                    NetworkMagic (NetworkMagic), SlotNo (SlotNo), ToJSON)
+import Cardano.Api (BlockInMode, CardanoMode, ChainPoint (ChainPoint, ChainPointAtGenesis),
+                    NetworkId (Mainnet, Testnet), NetworkMagic (NetworkMagic), SlotNo (SlotNo), ToJSON)
 import Cardano.Api.Extras ()
 import Data.Aeson qualified
 import Data.ByteString.Lazy.Char8 qualified
 import Options.Applicative (Alternative ((<|>)), Parser, auto, execParser, flag', help, helper, info, long, metavar,
                             option, str, strOption, (<**>))
 import Plutus.Streaming (withSimpleStreamerEventStream)
-import Plutus.Streaming.Transactions (transactions, txInsAndOuts')
+import Plutus.Streaming.Transactions (datums, transactions, txInsAndOuts')
 import Streaming.Prelude qualified as S
 
 --
@@ -81,4 +81,13 @@ main = do
     optionsSocketPath
     optionsNetworkId
     optionsChainPoint
-    (printJson . S.map (fmap (map txInsAndOuts' . transactions)))
+    ( printJson
+        . S.map -- Each StreamerEvent
+          ( fmap -- Inside the payload of Append events
+              ( \(bim :: BlockInMode CardanoMode) ->
+                  do
+                    tx <- transactions bim
+                    pure (txInsAndOuts' tx, datums tx)
+              )
+          )
+    )
