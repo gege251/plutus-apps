@@ -205,6 +205,7 @@ handleYieldedUnbalancedTx =
 
 handleAdjustUnbalancedTx ::
     ( Member (LogObserve (LogMessage Text)) effs
+    , Member (LogMsg RequestHandlerLogMsg) effs
     )
     => ProtocolParameters -> RequestHandler effs PABReq PABResp
 handleAdjustUnbalancedTx pparams =

@@ -36,6 +36,8 @@ module Wallet.Emulator.Folds (
     , walletFunds
     , walletFees
     , walletTxBalanceEvents
+    , walletTxOutCost
+    , walletAdjustedTxEvents
     -- * Folds that are used in the Playground
     , annotatedBlockchain
     , blockchain
@@ -49,6 +51,7 @@ module Wallet.Emulator.Folds (
     , mkTxLogs
     ) where
 
+import Cardano.Api.Shelley (ProtocolParameters)
 import Control.Applicative ((<|>))
 import Control.Foldl (Fold (Fold), FoldM (FoldM))
 import Control.Foldl qualified as L
@@ -67,6 +70,7 @@ import Ledger.AddressMap qualified as AM
 import Ledger.Constraints.OffChain (UnbalancedTx)
 import Ledger.Index (ScriptValidationEvent, ValidationError, ValidationPhase (Phase1, Phase2))
 import Ledger.Tx (Address, CardanoTx, TxOut (txOutValue), TxOutTx (txOutTxOut), getCardanoTxFee, onCardanoTx)
+import Ledger.Validation (getCardanoTxOutputsCost)
 import Ledger.Value (Value)
 import Plutus.Contract (Contract)
 import Plutus.Contract.Effects (PABReq, PABResp, _BalanceTxReq)
@@ -81,11 +85,11 @@ import Plutus.Trace.Emulator.Types (ContractInstanceLog, ContractInstanceMsg (Co
 import Prettyprinter (Pretty (..), defaultLayoutOptions, layoutPretty, vsep)
 import Prettyprinter.Render.Text (renderStrict)
 import Wallet.Emulator.Chain (ChainEvent (SlotAdd, TxnValidate, TxnValidationFail), _TxnValidate, _TxnValidationFail)
-import Wallet.Emulator.LogMessages (_BalancingUnbalancedTx, _ValidationFailed)
+import Wallet.Emulator.LogMessages (_AdjustingUnbalancedTx, _BalancingUnbalancedTx, _ValidationFailed)
 import Wallet.Emulator.MultiAgent (EmulatorEvent, EmulatorTimeEvent, chainEvent, eteEvent, instanceEvent,
-                                   userThreadEvent, walletClientEvent, walletEvent')
+                                   userThreadEvent, walletClientEvent, walletEvent, walletEvent')
 import Wallet.Emulator.NodeClient (_TxSubmit)
-import Wallet.Emulator.Wallet (Wallet, _TxBalanceLog, mockWalletAddress)
+import Wallet.Emulator.Wallet (Wallet, _RequestHandlerLog, _TxBalanceLog, mockWalletAddress)
 import Wallet.Rollup qualified as Rollup
 import Wallet.Rollup.Types (AnnotatedTx)
 
@@ -119,6 +123,10 @@ scriptEvents = preMapMaybe (preview (eteEvent . chainEvent) >=> getEvent) (conca
 -- | Unbalanced transactions that are sent to the wallet for balancing
 walletTxBalanceEvents :: EmulatorEventFold [UnbalancedTx]
 walletTxBalanceEvents = preMapMaybe (preview (eteEvent . walletEvent' . _2 . _TxBalanceLog . _BalancingUnbalancedTx)) L.list
+
+-- | Min lovelace of 'txOut's from adjusted unbalanced transactions
+walletAdjustedTxEvents :: EmulatorEventFold [(Wallet, [Value])]
+walletAdjustedTxEvents = filter (\x -> not $ null $ snd x) <$> preMapMaybe (preview (eteEvent . walletEvent' . to (\x -> (x ^. _1, x ^. _2 . _RequestHandlerLog . _AdjustingUnbalancedTx)))) L.list
 
 mkTxLogs :: EmulatorEventFold [MkTxLog]
 mkTxLogs =
@@ -270,6 +278,13 @@ walletFees w = fees <$> walletSubmittedFees <*> validatedTransactions <*> failed
             findFees (\(i, _, _, _, _) -> i) (\(_, _, _, _, collateral) -> collateral) submitted txsF
         findFees getId getFees submitted = foldMap (\t -> if Map.member (getId t) submitted then getFees t else mempty)
         walletSubmittedFees = L.handles (eteEvent . walletClientEvent w . _TxSubmit) L.map
+
+walletTxOutCost :: ProtocolParameters -> Wallet -> EmulatorEventFold [Value]
+walletTxOutCost pparams w = txOutCosts <$> walletSubmittedTxs <*> validatedTransactions
+    where
+        txOutCosts submitted txsV = findOutputs (\(i, _, _) -> i) (\(_, tx, _) -> getCardanoTxOutputsCost pparams tx) submitted txsV
+        findOutputs getId getOutputsCosts submitted = foldMap (\t -> if Map.member (getId t) submitted then getOutputsCosts t else mempty)
+        walletSubmittedTxs = L.handles (eteEvent . walletClientEvent w . _TxSubmit) L.map
 
 -- | Annotate the transactions that were validated by the node
 annotatedBlockchain :: EmulatorEventFold [[AnnotatedTx]]

@@ -349,7 +349,7 @@ tests =
             .&&. assertDone (buyer threadToken) (Trace.walletInstanceTag w3) (const True) "3rd party should be done"
             .&&. assertAccumState (buyer threadToken) (Trace.walletInstanceTag w2) ((==) trace2FinalState) "wallet 2 final state should be OK"
             .&&. assertAccumState (buyer threadToken) (Trace.walletInstanceTag w3) ((==) trace2FinalState) "wallet 3 final state should be OK"
-            .&&. walletFundsChange w1 (Ada.toValue (-Ledger.minAdaTxOut) <> Ada.toValue trace2WinningBid <> inv theToken)
+            .&&. walletFundsChange w1 (Ada.toValue (-1999956) <> Ada.toValue trace2WinningBid <> inv theToken)
             .&&. walletFundsChange w2 (Ada.toValue Ledger.minAdaTxOut <> inv (Ada.toValue trace2WinningBid) <> theToken)
             .&&. walletFundsChange w3 mempty)
             auctionTrace2

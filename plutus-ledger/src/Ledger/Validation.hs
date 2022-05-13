@@ -40,7 +40,8 @@ module Ledger.Validation(
   currentBlock,
   previousBlocks,
   -- * Etc.
-  emulatorGlobals
+  emulatorGlobals,
+  getCardanoTxOutputsCost
   ) where
 
 import Cardano.Api.Shelley (ShelleyBasedEra (ShelleyBasedEraAlonzo), alonzoGenesisDefaults, makeSignedTransaction,
@@ -70,6 +71,7 @@ import Data.Array (array)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Bitraversable (bitraverse)
 import Data.Default (def)
+import Data.Functor ((<&>))
 import Data.Functor.Identity (runIdentity)
 import Data.Map qualified as Map
 import Data.Maybe (fromMaybe)
@@ -88,6 +90,8 @@ import Plutus.V1.Ledger.Api qualified as P
 import Plutus.V1.Ledger.Scripts qualified as P
 import PlutusTx.Builtins qualified as Builtins
 import PlutusTx.ErrorCodes (checkHasFailedError)
+
+import Debug.Trace
 
 type CardanoLedgerError = Either P.ValidationErrorInPhase P.ToCardanoError
 
@@ -347,3 +351,11 @@ fromPaymentPrivateKey xprv txBody
       (C.Api.WitnessPaymentExtendedKey (C.Api.PaymentExtendedSigningKey xprv))
   where
     notUsed = undefined -- hack so we can reuse code from cardano-api
+
+getCardanoTxOutputsCost :: C.Api.ProtocolParameters -> P.CardanoTx -> [P.Value]
+getCardanoTxOutputsCost pparams = trace "getCardanoTxOutputsCost" . traceShowId . map P.toValue . getCosts . Map.elems . P.getCardanoTxUnspentOutputsTx
+    where
+        getCosts :: [P.TxOut] -> [P.Ada]
+        getCosts txOuts = txOuts <&> \txOut -> case fromPlutusTxOut' txOut of
+          Left _       -> P.lovelaceOf 0
+          Right txOut' -> P.fromValue $ evaluateMinLovelaceOutput pparams txOut'

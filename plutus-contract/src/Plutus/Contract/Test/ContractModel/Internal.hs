@@ -173,6 +173,8 @@ import Plutus.Trace.Emulator.Types (ContractHandle (..), ContractInstanceMsg (..
 
 import PlutusTx.Prelude qualified as P
 
+import Plutus.V1.Ledger.Ada qualified as Ada
+
 import Control.Foldl qualified as L
 import Control.Lens
 import Control.Monad.Cont
@@ -186,7 +188,7 @@ import Data.Aeson qualified as JSON
 import Data.Data
 import Data.Foldable
 import Data.IORef
-import Data.List
+import Data.List as List
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe
@@ -195,8 +197,10 @@ import Data.Row.Records (labels')
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
+import Ledger.ProtocolParameters ()
 
-import Ledger.Ada qualified as Ada
+import Data.Default (def)
+
 import Ledger.Index
 import Ledger.Slot
 import Ledger.Value (AssetClass)
@@ -1607,7 +1611,7 @@ checkBalances s envOuter = Map.foldrWithKey (\ w sval p -> walletFundsChange w s
     walletFundsChange w sval = TracePredicate $
       -- see Note [The Env contract]
       flip postMapM ((,) <$> Folds.instanceOutcome @() (toContract getEnvContract) envContractInstanceTag
-                         <*> L.generalize ((,) <$> Folds.walletFunds w <*> Folds.walletFees w)) $ \(outcome, (finalValue', fees)) -> do
+                         <*> L.generalize ((,,,) <$> Folds.walletFunds w <*> Folds.walletFees w <*> Folds.walletAdjustedTxEvents <*> Folds.walletTxOutCost def w)) $ \(outcome, (finalValue', fees, txOutCosts, walletTxOutCosts)) -> do
         dist <- Freer.ask @InitialDistribution
         case outcome of
           Done envInner -> do
@@ -1618,9 +1622,30 @@ checkBalances s envOuter = Map.foldrWithKey (\ w sval p -> walletFundsChange w s
                 lookup st = case lookupMaybe st of
                   Nothing  -> error $ "Trying to look up unknown symbolic token: " ++ show st ++ ",\nare you using a custom implementation of getAllSymtokens? If not, please report this as a bug."
                   Just tok -> tok
-                dlt = toValue lookup sval
+                dlt = toValue lookup sval P.- txOutWalletCost
                 initialValue = fold (dist ^. at w)
-                finalValue = finalValue' P.+ fees
+                finalValueWithFees = finalValue' P.+ fees
+                possibleTxOutCost = P.zero P.- (finalValueWithFees P.- initialValue P.- dlt)
+                txOutWalletCost = case List.lookup w txOutCosts of
+                  Just d -> Ada.toValue $ sum $ map Ada.fromValue d
+                  _      -> P.zero
+                otherWalletsCosts = case List.lookup w txOutCosts of
+                  Just d ->
+                    let walletCost = sum $ map Ada.fromValue d
+                    in map (Ada.toValue . (flip (P.-) walletCost) . sum . map Ada.fromValue . snd) $ filter ((/= w) . fst) txOutCosts
+                  _ -> []
+                otherTxOutCostByWallet = case List.lookup w txOutCosts of
+                  Just d | dlt /= P.zero -> Ada.toValue $ (sum $ map Ada.fromValue d) P.- (sum $ concatMap (map Ada.fromValue . snd) $ filter ((/= w) . fst) txOutCosts)
+                  _ -> P.zero
+                 -- case List.lookup w txOutCosts of
+                  -- Just d | possibleTxOutCost /= P.zero ->
+                  --     let otherWalletsCost = Ada.toValue $ sum $ concatMap (map Ada.fromValue . snd) $ filter ((/= w) . fst) txOutCosts
+                  --     in (Ada.toValue $ sum $ map Ada.fromValue d) P.- otherWalletsCost
+                  -- _ -> P.zero
+                txOutCost = if List.elem possibleTxOutCost (concat $ map snd txOutCosts) || List.elem possibleTxOutCost otherWalletsCosts
+                  then possibleTxOutCost
+                  else P.zero
+                finalValue = finalValue' P.+ fees -- P.+ txOutCost P.+ otherTxOutCostByWallet
                 result = initialValue P.+ dlt == finalValue
             unless result $ do
                 tell @(Doc Void) $ vsep $
@@ -1629,7 +1654,21 @@ checkBalances s envOuter = Map.foldrWithKey (\ w sval p -> walletFundsChange w s
                     if initialValue == finalValue
                     then ["but they did not change"]
                     else ["but they changed by", " " <+> viaShow (finalValue P.- initialValue),
-                          "a discrepancy of",    " " <+> viaShow (finalValue P.- initialValue P.- dlt)]
+                          "a discrepancy of",    " " <+> viaShow (finalValue P.- initialValue P.- dlt)
+                          , "finalValue:" <+> viaShow (finalValue)
+                          , "finalValue': " <+> viaShow (finalValue')
+                          , "initialValue: " <+> viaShow initialValue
+                          , "dlt: " <+> viaShow dlt
+                          , "txOutCosts: " <+> viaShow txOutCosts
+                          , "txOutCost: " <+> viaShow txOutCost
+                          , "possibleTxOutCost: " <+> viaShow possibleTxOutCost
+                          , "otherTxOutCostByWallet: " <+> viaShow otherTxOutCostByWallet
+                          , "walletTxOutCosts: " <+> viaShow walletTxOutCosts
+                          , "otherWalletsCosts: " <+> viaShow otherWalletsCosts
+                          , "fees: " <+> viaShow fees
+                          , "sval: " <+> viaShow sval
+                          , "envOuter: " <+> viaShow envOuter
+                          , "envInner: " <+> viaShow envInner]
             pure result
           _ -> error "I am the pope"
 

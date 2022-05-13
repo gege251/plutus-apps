@@ -31,6 +31,8 @@ import Test.QuickCheck hiding ((.&&.))
 import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
 
+import Debug.Trace
+
 -- | The token that we are auctioning off.
 theToken :: Value
 theToken = someTokenValue "token" 1
@@ -98,9 +100,9 @@ instance ContractModel AuctionModel where
 
     arbitraryAction s
         | p /= NotStarted =
-            frequency$[ (40, Bid  <$> elements [w2, w3, w4] <*> choose (Ada.getLovelace Ledger.minAdaTxOut, 100_000_000))
+            frequency$[ (40, Bid  <$> elements [w2, w3, w4] <*> choose (1, 100_000_000))
                       -- Random reveal
-                      , (20, Reveal <$> elements [w2, w3, w4] <*> choose (Ada.getLovelace Ledger.minAdaTxOut, 100_000_000))
+                      , (20, Reveal <$> elements [w2, w3, w4] <*> choose (1, 100_000_000))
                       ] ++
                       -- Correct reveal
                       [ (20, uncurry Reveal <$> elements [ (w,i) | (i,w) <- s ^. contractState . currentBids ])
@@ -128,10 +130,8 @@ instance ContractModel AuctionModel where
 
             Bid w v        -> s ^. contractState . phase == Bidding
                            && w `notElem` fmap snd (s ^. contractState . currentBids)
-                           && v >= Ada.getLovelace Ledger.minAdaTxOut
 
             Reveal _ v     -> s ^. contractState . phase == AwaitingPayout
-                           && v >= Ada.getLovelace Ledger.minAdaTxOut
 
             Payout _       -> s ^. contractState . phase == PayoutTime
 
@@ -168,7 +168,8 @@ instance ContractModel AuctionModel where
             Init ebS pS -> do
                 endBidSlot .= ebS
                 payoutSlot .= pS
-                withdraw w1 $ Ada.toValue Ledger.minAdaTxOut <> theToken
+                traceShowM $ "withdraw " ++ show w1 ++ " " ++ show theToken
+                withdraw w1 theToken
                 phase .= Bidding
                 wait 3
 
@@ -184,11 +185,14 @@ instance ContractModel AuctionModel where
                 case mwinningBid of
                   Just (oldBid, w') ->
                     when ((bid, w) `elem` bids && bid > oldBid) $ do
+                      traceShowM $ "withdraw " ++ show w ++ " " ++ show (Ada.lovelaceValueOf bid)
                       withdraw w $ Ada.lovelaceValueOf bid
+                      traceShowM $ "deposit " ++ show w' ++ " " ++ show (Ada.lovelaceValueOf oldBid)
                       deposit w' $ Ada.lovelaceValueOf oldBid
                       currentWinningBid .= Just (bid, w)
                   Nothing ->
                     when ((bid, w) `elem` bids) $ do
+                      traceShowM $ "withdraw " ++ show w ++ " " ++ show (Ada.lovelaceValueOf bid)
                       withdraw w $ Ada.lovelaceValueOf bid
                       currentWinningBid .= Just (bid, w)
                 wait 1
@@ -197,11 +201,14 @@ instance ContractModel AuctionModel where
                   mwinningBid <- viewContractState currentWinningBid
                   case mwinningBid of
                     Just (bid, winner) -> do
-                      deposit winner $ Ada.toValue Ledger.minAdaTxOut <> theToken
+                      traceShowM $ "deposit " ++ show winner ++ " " ++ show theToken
+                      deposit winner theToken
+                      traceShowM $ "deposit " ++ show w1 ++ " " ++ show (Ada.lovelaceValueOf bid)
                       deposit w1 $ Ada.lovelaceValueOf bid
 
                     Nothing -> do
-                      deposit w1 $ Ada.toValue Ledger.minAdaTxOut <> theToken
+                      traceShowM $ "deposit " ++ show w1 ++ " " ++ show theToken
+                      deposit w1 theToken
                   wait 1
                   phase $= AuctionOver
 

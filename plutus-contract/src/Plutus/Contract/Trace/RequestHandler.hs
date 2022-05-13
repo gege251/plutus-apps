@@ -49,9 +49,10 @@ import Plutus.Contract.Resumable (Request (Request, itID, rqID, rqRequest),
 
 import Control.Monad.Freer.Extras.Log (LogMessage, LogMsg, LogObserve, logDebug, logWarn, surroundDebug)
 import Ledger (POSIXTime, POSIXTimeRange, PaymentPubKeyHash, Slot, SlotRange)
-import Ledger.Constraints.OffChain (UnbalancedTx, adjustUnbalancedTx)
+import Ledger.Constraints.OffChain (UnbalancedTx, adjustUnbalancedTx, unBalancedTxTx)
 import Ledger.TimeSlot qualified as TimeSlot
-import Ledger.Tx (CardanoTx, ToCardanoError)
+import Ledger.Tx (CardanoTx (EmulatorTx), ToCardanoError)
+import Ledger.Validation (getCardanoTxOutputsCost)
 import Plutus.ChainIndex (ChainIndexQueryEffect)
 import Plutus.ChainIndex.Effects qualified as ChainIndexEff
 import Plutus.Contract.Effects (ChainIndexQuery (..), ChainIndexResponse (..))
@@ -59,7 +60,7 @@ import Plutus.Contract.Wallet qualified as Wallet
 import Wallet.API (WalletAPIError)
 import Wallet.Effects (NodeClientEffect, WalletEffect)
 import Wallet.Effects qualified
-import Wallet.Emulator.LogMessages (RequestHandlerLogMsg (HandleTxFailed, SlotNoticationTargetVsCurrent))
+import Wallet.Emulator.LogMessages (RequestHandlerLogMsg (AdjustingUnbalancedTx, HandleTxFailed, SlotNoticationTargetVsCurrent))
 import Wallet.Types (ContractInstanceId)
 
 -- | Request handlers that can choose whether to handle an effect (using
@@ -261,9 +262,12 @@ handleYieldedUnbalancedTx =
 handleAdjustUnbalancedTx ::
     forall effs.
     ( Member (LogObserve (LogMessage Text)) effs
+    , Member (LogMsg RequestHandlerLogMsg) effs
     )
     => ProtocolParameters
     -> RequestHandler effs UnbalancedTx (Either ToCardanoError UnbalancedTx)
 handleAdjustUnbalancedTx pparams =
     RequestHandler $ \utx ->
-        surroundDebug @Text "handleAdjustUnbalancedTx" $ pure $ adjustUnbalancedTx pparams utx
+        surroundDebug @Text "handleAdjustUnbalancedTx" $ do
+            logDebug $ AdjustingUnbalancedTx $ getCardanoTxOutputsCost pparams (EmulatorTx $ unBalancedTxTx utx)
+            pure $ adjustUnbalancedTx pparams utx
