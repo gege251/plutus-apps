@@ -243,6 +243,8 @@ import Prettyprinter
 
 import Data.Generics.Uniplate.Data (universeBi)
 
+import Debug.Trace
+
 -- | Key-value map where keys and values have three indices that can vary between different elements
 --   of the map. Used to store `ContractHandle`s, which are indexed over observable state, schema,
 --   and error type.
@@ -1611,7 +1613,7 @@ checkBalances s envOuter = Map.foldrWithKey (\ w sval p -> walletFundsChange w s
     walletFundsChange w sval = TracePredicate $
       -- see Note [The Env contract]
       flip postMapM ((,) <$> Folds.instanceOutcome @() (toContract getEnvContract) envContractInstanceTag
-                         <*> L.generalize ((,,,) <$> Folds.walletFunds w <*> Folds.walletFees w <*> Folds.walletAdjustedTxEvents <*> Folds.walletTxOutCost def w)) $ \(outcome, (finalValue', fees, txOutCosts, walletTxOutCosts)) -> do
+                         <*> L.generalize ((,,) <$> Folds.walletFunds w <*> Folds.walletFees w <*> Folds.walletAdjustedTxEvents)) $ \(outcome, (finalValue', fees, txOutCosts)) -> do
         dist <- Freer.ask @InitialDistribution
         case outcome of
           Done envInner -> do
@@ -1622,53 +1624,43 @@ checkBalances s envOuter = Map.foldrWithKey (\ w sval p -> walletFundsChange w s
                 lookup st = case lookupMaybe st of
                   Nothing  -> error $ "Trying to look up unknown symbolic token: " ++ show st ++ ",\nare you using a custom implementation of getAllSymtokens? If not, please report this as a bug."
                   Just tok -> tok
-                dlt = toValue lookup sval P.- txOutWalletCost
+                dlt' = toValue lookup sval
+                dlt'' = dlt' P.- txOutWalletCost
                 initialValue = fold (dist ^. at w)
-                finalValueWithFees = finalValue' P.+ fees
-                possibleTxOutCost = P.zero P.- (finalValueWithFees P.- initialValue P.- dlt)
-                txOutWalletCost = case List.lookup w txOutCosts of
-                  Just d -> Ada.toValue $ sum $ map Ada.fromValue d
-                  _      -> P.zero
-                otherWalletsCosts = case List.lookup w txOutCosts of
-                  Just d ->
-                    let walletCost = sum $ map Ada.fromValue d
-                    in map (Ada.toValue . (flip (P.-) walletCost) . sum . map Ada.fromValue . snd) $ filter ((/= w) . fst) txOutCosts
-                  _ -> []
-                otherTxOutCostByWallet = case List.lookup w txOutCosts of
-                  Just d | dlt /= P.zero -> Ada.toValue $ (sum $ map Ada.fromValue d) P.- (sum $ concatMap (map Ada.fromValue . snd) $ filter ((/= w) . fst) txOutCosts)
+                possibleTxOutCost = P.zero P.- (finalValue P.- initialValue P.- dlt'')
+                txOutWalletCost = case List.uncons $ reverse $ filter ((== w) . fst) txOutCosts of
+                  Just ((_, vs), _) | dlt' /= P.zero -> Ada.toValue $ sum $ map Ada.fromValue vs
+                  _                                  -> P.zero
+                walletsDiffTxOutCost = case List.uncons $ reverse $ filter ((== w) . fst) txOutCosts of
+                  Just ((_, vs), _) ->
+                    let txOutCost = sum $ map Ada.fromValue vs
+                        deltas = map (P.abs . (flip (P.-) txOutCost) . sum . map Ada.fromValue . snd) $ filter (\(w', vs') -> (w' /= w) && (P.zero /= (sum $ map Ada.fromValue vs'))) txOutCosts
+                    in if (P.abs $ Ada.fromValue possibleTxOutCost) `elem` deltas
+                      then possibleTxOutCost
+                      else P.zero
                   _ -> P.zero
-                 -- case List.lookup w txOutCosts of
-                  -- Just d | possibleTxOutCost /= P.zero ->
-                  --     let otherWalletsCost = Ada.toValue $ sum $ concatMap (map Ada.fromValue . snd) $ filter ((/= w) . fst) txOutCosts
-                  --     in (Ada.toValue $ sum $ map Ada.fromValue d) P.- otherWalletsCost
-                  -- _ -> P.zero
-                txOutCost = if List.elem possibleTxOutCost (concat $ map snd txOutCosts) || List.elem possibleTxOutCost otherWalletsCosts
-                  then possibleTxOutCost
-                  else P.zero
-                finalValue = finalValue' P.+ fees -- P.+ txOutCost P.+ otherTxOutCostByWallet
+                finalValue = finalValue' P.+ fees
+                dlt = dlt'' P.- walletsDiffTxOutCost
                 result = initialValue P.+ dlt == finalValue
             unless result $ do
                 tell @(Doc Void) $ vsep $
                     [ "Expected funds of" <+> pretty w <+> "to change by"
                     , " " <+> viaShow dlt] ++
-                    if initialValue == finalValue
+                    (if initialValue == finalValue
                     then ["but they did not change"]
                     else ["but they changed by", " " <+> viaShow (finalValue P.- initialValue),
-                          "a discrepancy of",    " " <+> viaShow (finalValue P.- initialValue P.- dlt)
-                          , "finalValue:" <+> viaShow (finalValue)
+                          "a discrepancy of",    " " <+> viaShow (finalValue P.- initialValue P.- dlt)])
+                    ++ [ "finalValue:" <+> viaShow (finalValue)
                           , "finalValue': " <+> viaShow (finalValue')
                           , "initialValue: " <+> viaShow initialValue
+                          , "dlt': " <+> viaShow dlt'
                           , "dlt: " <+> viaShow dlt
-                          , "txOutCosts: " <+> viaShow txOutCosts
-                          , "txOutCost: " <+> viaShow txOutCost
+                          , "txOutWalletCost: " <+> viaShow txOutWalletCost
                           , "possibleTxOutCost: " <+> viaShow possibleTxOutCost
-                          , "otherTxOutCostByWallet: " <+> viaShow otherTxOutCostByWallet
-                          , "walletTxOutCosts: " <+> viaShow walletTxOutCosts
-                          , "otherWalletsCosts: " <+> viaShow otherWalletsCosts
+                          , "walletsTxOutCosts: " <+> viaShow txOutCosts
+                          , "walletsDiffTxOutCost: " <+> viaShow walletsDiffTxOutCost
                           , "fees: " <+> viaShow fees
-                          , "sval: " <+> viaShow sval
-                          , "envOuter: " <+> viaShow envOuter
-                          , "envInner: " <+> viaShow envInner]
+                          , "sval: " <+> viaShow sval]
             pure result
           _ -> error "I am the pope"
 

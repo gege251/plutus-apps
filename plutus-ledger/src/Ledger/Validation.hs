@@ -41,7 +41,8 @@ module Ledger.Validation(
   previousBlocks,
   -- * Etc.
   emulatorGlobals,
-  getCardanoTxOutputsCost
+  getCardanoTxOutputsCost,
+  getCardanoTxOutputsMissingCost
   ) where
 
 import Cardano.Api.Shelley (ShelleyBasedEra (ShelleyBasedEraAlonzo), alonzoGenesisDefaults, makeSignedTransaction,
@@ -90,6 +91,7 @@ import Plutus.V1.Ledger.Api qualified as P
 import Plutus.V1.Ledger.Scripts qualified as P
 import PlutusTx.Builtins qualified as Builtins
 import PlutusTx.ErrorCodes (checkHasFailedError)
+import PlutusTx.Numeric qualified as P
 
 import Debug.Trace
 
@@ -359,3 +361,14 @@ getCardanoTxOutputsCost pparams = trace "getCardanoTxOutputsCost" . traceShowId 
         getCosts txOuts = txOuts <&> \txOut -> case fromPlutusTxOut' txOut of
           Left _       -> P.lovelaceOf 0
           Right txOut' -> P.fromValue $ evaluateMinLovelaceOutput pparams txOut'
+
+getCardanoTxOutputsMissingCost :: C.Api.ProtocolParameters -> P.CardanoTx -> [P.Value]
+getCardanoTxOutputsMissingCost pparams = trace "getCardanoTxOutputsCost" . traceShowId . getCosts . Map.elems . P.getCardanoTxUnspentOutputsTx
+    where
+        getCosts :: [P.TxOut] -> [P.Value]
+        getCosts txOuts = txOuts <&> \txOut -> case fromPlutusTxOut' txOut of
+          Left _       -> P.zero
+          Right txOut' ->
+            let minAdaTxOut' = P.fromValue $ evaluateMinLovelaceOutput pparams txOut'
+                missingLovelace = max 0 (minAdaTxOut' - P.fromValue (P.txOutValue txOut))
+            in P.toValue missingLovelace

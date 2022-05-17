@@ -409,12 +409,12 @@ adjustUnbalancedTx pparams = mapMOf (tx . Tx.outputs . traverse) adjustTxOut
     adjustTxOut txOut = fromPlutusTxOut' txOut <&> \txOut' ->
         let minAdaTxOut' = Ada.fromValue $ evaluateMinLovelaceOutput pparams txOut'
             missingLovelace = max 0 (minAdaTxOut' - Ada.fromValue (txOutValue txOut))
-        in trace ("missingLovelace" ++ show missingLovelace) $
-            trace ("txOutValue txOut was: " ++ show (txOutValue txOut)) $
-            trace ("calculated minAdaTxOut': " ++ show minAdaTxOut') $
-            trace ("txOutValue result: " ++ show (txOutValue txOut <> Ada.toValue missingLovelace)) $
-            trace ("END")
-                txOut { txOutValue = txOutValue txOut <> Ada.toValue missingLovelace }
+        -- in trace ("missingLovelace" ++ show missingLovelace) $
+        --     trace ("txOutValue txOut was: " ++ show (txOutValue txOut)) $
+        --     trace ("calculated minAdaTxOut': " ++ show minAdaTxOut') $
+        --     trace ("txOutValue result: " ++ show (txOutValue txOut <> Ada.toValue missingLovelace)) $
+        --     trace ("END")
+        in txOut { txOutValue = txOutValue txOut <> Ada.toValue missingLovelace }
 
 -- | Add the remaining balance of the total value that the tx must spend.
 --   See note [Balance of value spent]

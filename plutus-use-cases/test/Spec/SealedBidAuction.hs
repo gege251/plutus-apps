@@ -17,7 +17,6 @@ import Data.Data
 import Data.Default (Default (def))
 
 import Ledger (Slot (..), Value)
-import Ledger qualified
 import Ledger.Ada qualified as Ada
 import Ledger.Generators (someTokenValue)
 import Ledger.TimeSlot qualified as TimeSlot
@@ -128,10 +127,10 @@ instance ContractModel AuctionModel where
             -- maybe not?
             Init{}         -> s ^. contractState . phase == NotStarted
 
-            Bid w v        -> s ^. contractState . phase == Bidding
+            Bid w _        -> s ^. contractState . phase == Bidding
                            && w `notElem` fmap snd (s ^. contractState . currentBids)
 
-            Reveal _ v     -> s ^. contractState . phase == AwaitingPayout
+            Reveal _ _     -> s ^. contractState . phase == AwaitingPayout
 
             Payout _       -> s ^. contractState . phase == PayoutTime
 
