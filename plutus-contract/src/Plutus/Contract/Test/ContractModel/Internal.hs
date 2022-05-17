@@ -1627,10 +1627,14 @@ checkBalances s envOuter = Map.foldrWithKey (\ w sval p -> walletFundsChange w s
                 dlt' = toValue lookup sval
                 dlt'' = dlt' P.- txOutWalletCost
                 initialValue = fold (dist ^. at w)
-                possibleTxOutCost = P.zero P.- (finalValue P.- initialValue P.- dlt'')
+                possibleTxOutCost = P.zero P.- (finalValue P.- initialValue P.- dlt')
                 txOutWalletCost = case List.uncons $ reverse $ filter ((== w) . fst) txOutCosts of
-                  Just ((_, vs), _) | dlt' /= P.zero -> Ada.toValue $ sum $ map Ada.fromValue vs
-                  _                                  -> P.zero
+                  Just ((_, vs), _) ->
+                    let txOutCost = Ada.toValue $ sum $ map Ada.fromValue vs
+                    in if dlt' /= P.zero then txOutCost
+                    else if (Ada.fromValue possibleTxOutCost >= P.zero) && possibleTxOutCost == txOutCost then txOutCost
+                      else P.zero
+                  _ -> P.zero
                 walletsDiffTxOutCost = case List.uncons $ reverse $ filter ((== w) . fst) txOutCosts of
                   Just ((_, vs), _) ->
                     let txOutCost = sum $ map Ada.fromValue vs

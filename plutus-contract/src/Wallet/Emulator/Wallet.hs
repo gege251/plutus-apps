@@ -430,6 +430,8 @@ handleBalanceTx utxo UnbalancedTx{unBalancedTxTx} = do
         balance = left PlutusTx.- right
         (neg, pos) = adjustBalanceWithMissingLovelace $ Value.split balance
 
+    traceShowM $ "before (neg, pos): " ++ show (Value.split balance)
+    traceShowM $ "after (neg, pos): " ++ show (neg, pos)
     tx' <- if Value.isZero pos
            then do
                logDebug NoOutputsAdded
