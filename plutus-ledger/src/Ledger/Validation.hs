@@ -41,7 +41,6 @@ module Ledger.Validation(
   previousBlocks,
   -- * Etc.
   emulatorGlobals,
-  getCardanoTxOutputsCost,
   getCardanoTxOutputsMissingCost
   ) where
 
@@ -354,16 +353,8 @@ fromPaymentPrivateKey xprv txBody
   where
     notUsed = undefined -- hack so we can reuse code from cardano-api
 
-getCardanoTxOutputsCost :: C.Api.ProtocolParameters -> P.CardanoTx -> [P.Value]
-getCardanoTxOutputsCost pparams = trace "getCardanoTxOutputsCost" . traceShowId . map P.toValue . getCosts . Map.elems . P.getCardanoTxUnspentOutputsTx
-    where
-        getCosts :: [P.TxOut] -> [P.Ada]
-        getCosts txOuts = txOuts <&> \txOut -> case fromPlutusTxOut' txOut of
-          Left _       -> P.lovelaceOf 0
-          Right txOut' -> P.fromValue $ evaluateMinLovelaceOutput pparams txOut'
-
 getCardanoTxOutputsMissingCost :: C.Api.ProtocolParameters -> P.CardanoTx -> [P.Value]
-getCardanoTxOutputsMissingCost pparams = trace "getCardanoTxOutputsCost" . traceShowId . getCosts . Map.elems . P.getCardanoTxUnspentOutputsTx
+getCardanoTxOutputsMissingCost pparams = trace "getCardanoTxOutputsMissingCost" . traceShowId . getCosts . Map.elems . P.getCardanoTxUnspentOutputsTx
     where
         getCosts :: [P.TxOut] -> [P.Value]
         getCosts txOuts = txOuts <&> \txOut -> case fromPlutusTxOut' txOut of

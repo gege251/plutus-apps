@@ -36,7 +36,6 @@ module Wallet.Emulator.Folds (
     , walletFunds
     , walletFees
     , walletTxBalanceEvents
-    , walletTxOutCost
     , walletAdjustedTxEvents
     -- * Folds that are used in the Playground
     , annotatedBlockchain
@@ -70,7 +69,6 @@ import Ledger.AddressMap qualified as AM
 import Ledger.Constraints.OffChain (UnbalancedTx)
 import Ledger.Index (ScriptValidationEvent, ValidationError, ValidationPhase (Phase1, Phase2))
 import Ledger.Tx (Address, CardanoTx, TxOut (txOutValue), TxOutTx (txOutTxOut), getCardanoTxFee, onCardanoTx)
-import Ledger.Validation (getCardanoTxOutputsCost)
 import Ledger.Value (Value)
 import Plutus.Contract (Contract)
 import Plutus.Contract.Effects (PABReq, PABResp, _BalanceTxReq)
@@ -278,13 +276,6 @@ walletFees w = fees <$> walletSubmittedFees <*> validatedTransactions <*> failed
             findFees (\(i, _, _, _, _) -> i) (\(_, _, _, _, collateral) -> collateral) submitted txsF
         findFees getId getFees submitted = foldMap (\t -> if Map.member (getId t) submitted then getFees t else mempty)
         walletSubmittedFees = L.handles (eteEvent . walletClientEvent w . _TxSubmit) L.map
-
-walletTxOutCost :: ProtocolParameters -> Wallet -> EmulatorEventFold [Value]
-walletTxOutCost pparams w = txOutCosts <$> walletSubmittedTxs <*> validatedTransactions
-    where
-        txOutCosts submitted txsV = findOutputs (\(i, _, _) -> i) (\(_, tx, _) -> getCardanoTxOutputsCost pparams tx) submitted txsV
-        findOutputs getId getOutputsCosts submitted = foldMap (\t -> if Map.member (getId t) submitted then getOutputsCosts t else mempty)
-        walletSubmittedTxs = L.handles (eteEvent . walletClientEvent w . _TxSubmit) L.map
 
 -- | Annotate the transactions that were validated by the node
 annotatedBlockchain :: EmulatorEventFold [[AnnotatedTx]]
