@@ -67,6 +67,7 @@ module Plutus.Contract.Test.ContractModel.Internal
     , burn
     , deposit
     , withdraw
+    , withdrawMinted
     , transfer
     , modifyContractState
     , createToken
@@ -173,8 +174,6 @@ import Plutus.Trace.Emulator.Types (ContractHandle (..), ContractInstanceMsg (..
 
 import PlutusTx.Prelude qualified as P
 
-import Plutus.V1.Ledger.Ada qualified as Ada
-
 import Control.Foldl qualified as L
 import Control.Lens
 import Control.Monad.Cont
@@ -198,8 +197,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Ledger.ProtocolParameters ()
-
-import Data.Default (def)
+import Plutus.V1.Ledger.Ada qualified as Ada
 
 import Ledger.Index
 import Ledger.Slot
@@ -223,6 +221,7 @@ import Test.QuickCheck.StateModel hiding (Action, Actions (..), actionName, arbi
                                    nextState, pattern Actions, perform, precondition, shrinkAction, stateAfter)
 import Test.QuickCheck.StateModel qualified as StateModel
 
+import Plutus.Contract.Test.ContractModel.MissingLovelace (calculateDelta)
 import Test.QuickCheck hiding (ShrinkState, checkCoverage, getSize, (.&&.), (.||.))
 import Test.QuickCheck qualified as QC
 import Test.QuickCheck.Monadic (PropertyM, monadic)
@@ -242,8 +241,6 @@ import Plutus.Contract.Types (IsContract (..))
 import Prettyprinter
 
 import Data.Generics.Uniplate.Data (universeBi)
-
-import Debug.Trace
 
 -- | Key-value map where keys and values have three indices that can vary between different elements
 --   of the map. Used to store `ContractHandle`s, which are indexed over observable state, schema,
@@ -697,6 +694,14 @@ deposit w val = modState (balanceChangesL . at w) (Just . maybe (toSymValue val)
 --   held by contracts.
 withdraw :: SymValueLike v => Wallet -> v -> Spec state ()
 withdraw w val = deposit w (inv . toSymValue $ val)
+
+-- | Withdraw minted tokens from a wallet. This works for situations when we mint tokens and withdraw them
+-- in one step. We have to deposit them at first to the wallet and then withdraw
+-- to make sure that our adjusted ada will get into 'delta' to check balances properly.
+withdrawMinted :: SymValueLike v => Wallet -> v -> Spec state ()
+withdrawMinted w val = do
+  deposit w (toSymValue $ val)
+  deposit w (inv . toSymValue $ val)
 
 -- | Transfer tokens between wallets, updating their `balances`.
 transfer :: SymValueLike v
@@ -1624,27 +1629,10 @@ checkBalances s envOuter = Map.foldrWithKey (\ w sval p -> walletFundsChange w s
                 lookup st = case lookupMaybe st of
                   Nothing  -> error $ "Trying to look up unknown symbolic token: " ++ show st ++ ",\nare you using a custom implementation of getAllSymtokens? If not, please report this as a bug."
                   Just tok -> tok
-                dlt' = toValue lookup sval
-                dlt'' = dlt' P.- txOutWalletCost
                 initialValue = fold (dist ^. at w)
-                possibleTxOutCost = P.zero P.- (finalValue P.- initialValue P.- dlt')
-                txOutWalletCost = case List.uncons $ reverse $ filter ((== w) . fst) txOutCosts of
-                  Just ((_, vs), _) ->
-                    let txOutCost = Ada.toValue $ sum $ map Ada.fromValue vs
-                    in if dlt' /= P.zero then txOutCost
-                    else if (Ada.fromValue possibleTxOutCost >= P.zero) && possibleTxOutCost == txOutCost then txOutCost
-                      else P.zero
-                  _ -> P.zero
-                walletsDiffTxOutCost = case List.uncons $ reverse $ filter ((== w) . fst) txOutCosts of
-                  Just ((_, vs), _) ->
-                    let txOutCost = sum $ map Ada.fromValue vs
-                        deltas = map (P.abs . (flip (P.-) txOutCost) . sum . map Ada.fromValue . snd) $ filter (\(w', vs') -> (w' /= w) && (P.zero /= (sum $ map Ada.fromValue vs'))) txOutCosts
-                    in if (P.abs $ Ada.fromValue possibleTxOutCost) `elem` deltas
-                      then possibleTxOutCost
-                      else P.zero
-                  _ -> P.zero
+                dlt' = toValue lookup sval
                 finalValue = finalValue' P.+ fees
-                dlt = dlt'' P.- walletsDiffTxOutCost
+                dlt = calculateDelta dlt' initialValue finalValue w txOutCosts
                 result = initialValue P.+ dlt == finalValue
             unless result $ do
                 tell @(Doc Void) $ vsep $
@@ -1654,17 +1642,6 @@ checkBalances s envOuter = Map.foldrWithKey (\ w sval p -> walletFundsChange w s
                     then ["but they did not change"]
                     else ["but they changed by", " " <+> viaShow (finalValue P.- initialValue),
                           "a discrepancy of",    " " <+> viaShow (finalValue P.- initialValue P.- dlt)])
-                    ++ [ "finalValue:" <+> viaShow (finalValue)
-                          , "finalValue': " <+> viaShow (finalValue')
-                          , "initialValue: " <+> viaShow initialValue
-                          , "dlt': " <+> viaShow dlt'
-                          , "dlt: " <+> viaShow dlt
-                          , "txOutWalletCost: " <+> viaShow txOutWalletCost
-                          , "possibleTxOutCost: " <+> viaShow possibleTxOutCost
-                          , "walletsTxOutCosts: " <+> viaShow txOutCosts
-                          , "walletsDiffTxOutCost: " <+> viaShow walletsDiffTxOutCost
-                          , "fees: " <+> viaShow fees
-                          , "sval: " <+> viaShow sval]
             pure result
           _ -> error "I am the pope"
 

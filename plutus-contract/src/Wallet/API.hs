@@ -60,18 +60,22 @@ import Cardano.Api.Shelley (ProtocolParameters)
 import Control.Monad (unless, void)
 import Control.Monad.Freer (Eff, Member)
 import Control.Monad.Freer.Error (Error, throwError)
-import Control.Monad.Freer.Extras.Log (LogMsg, logWarn)
+import Control.Monad.Freer.Extras.Log (LogMsg, logDebug, logWarn)
 import Data.Default (Default (def))
 import Data.Text (Text)
 import Data.Void (Void)
-import Ledger (CardanoTx, Interval (Interval, ivFrom, ivTo), PaymentPubKeyHash, PubKey (PubKey, getPubKey),
+import Ledger (Interval (Interval, ivFrom, ivTo), PaymentPubKeyHash, PubKey (PubKey, getPubKey),
                PubKeyHash (PubKeyHash, getPubKeyHash), Slot, SlotRange, Value, after, always, before, contains,
                interval, isEmpty, member, singleton, width)
 import Ledger.Constraints qualified as Constraints
+import Ledger.Constraints.OffChain (adjustUnbalancedTx, unBalancedTxTx)
 import Ledger.ProtocolParameters ()
 import Ledger.TimeSlot qualified as TimeSlot
+import Ledger.Tx (CardanoTx (EmulatorTx))
+import Ledger.Validation (getCardanoTxOutputsMissingCosts)
 import Wallet.Effects (NodeClientEffect, WalletEffect, balanceTx, getClientSlot, getClientSlotConfig,
                        ownPaymentPubKeyHash, publishTx, submitTxn, walletAddSignature, yieldUnbalancedTx)
+import Wallet.Emulator.LogMessages (RequestHandlerLogMsg (AdjustingUnbalancedTx))
 import Wallet.Error (WalletAPIError (PaymentMkTxError, ToCardanoError))
 import Wallet.Error qualified
 
@@ -85,6 +89,7 @@ payToPaymentPublicKeyHash ::
     ( Member WalletEffect effs
     , Member (Error WalletAPIError) effs
     , Member (LogMsg Text) effs
+    , Member (LogMsg RequestHandlerLogMsg) effs
     )
     => ProtocolParameters -> SlotRange -> Value -> PaymentPubKeyHash -> Eff effs CardanoTx
 payToPaymentPublicKeyHash pparams range v pk = do
@@ -93,7 +98,8 @@ payToPaymentPublicKeyHash pparams range v pk = do
     utx <- either (throwError . PaymentMkTxError)
                   pure
                   (Constraints.mkTx @Void mempty constraints)
-    adjustedUtx <- either (throwError . ToCardanoError) pure (Constraints.adjustUnbalancedTx pparams utx)
+    adjustedUtx <- either (throwError . ToCardanoError) pure (adjustUnbalancedTx pparams utx)
+    logDebug $ AdjustingUnbalancedTx $ getCardanoTxOutputsMissingCosts pparams (EmulatorTx $ unBalancedTxTx utx)
     unless (utx == adjustedUtx) $
       logWarn @Text $ "Wallet.API.payToPublicKeyHash: "
                    <> "Adjusted a transaction output value which has less than the minimum amount of Ada."
@@ -105,6 +111,7 @@ payToPaymentPublicKeyHash_ ::
     ( Member WalletEffect effs
     , Member (Error WalletAPIError) effs
     , Member (LogMsg Text) effs
+    , Member (LogMsg RequestHandlerLogMsg) effs
     )
     => SlotRange -> Value -> PaymentPubKeyHash -> Eff effs ()
 payToPaymentPublicKeyHash_ r v = void . payToPaymentPublicKeyHash def r v

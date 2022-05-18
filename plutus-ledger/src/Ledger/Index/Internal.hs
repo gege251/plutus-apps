@@ -60,7 +60,7 @@ data ValidationError =
     -- ^ The amount spent by the transaction differs from the amount consumed by it.
     | NegativeValue Tx
     -- ^ The transaction produces an output with a negative value.
-    | ValueContainsLessThanMinAda Tx TxOut
+    | ValueContainsLessThanMinAda Tx TxOut V.Value
     -- ^ The transaction produces an output with a value containing less than the minimum required Ada.
     | NonAdaFees Tx
     -- ^ The fee is not denominated entirely in Ada.

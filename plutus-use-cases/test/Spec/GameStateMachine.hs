@@ -147,8 +147,6 @@ instance ContractModel GameModel where
 
     nextState (GiveToken w) = do
         w0 <- fromJust <$> viewContractState hasToken
-        withdraw w0 $ Ada.toValue Ledger.minAdaTxOut
-        deposit w $ Ada.toValue Ledger.minAdaTxOut
         transfer w0 w guessTokenVal
         hasToken .= Just w
         wait 1
@@ -277,7 +275,7 @@ noLockedFunds = do
     w      <- forAllQ $ elementsQ wallets
     secret <- viewContractState currentSecret
     val    <- viewContractState gameValue
-    when (val > Ada.getLovelace Ledger.minAdaTxOut) $ do
+    when (val >= Ada.getLovelace Ledger.minAdaTxOut) $ do
         monitor $ label "Unlocking funds"
         action $ GiveToken w
         action $ Guess w secret "" val
@@ -315,27 +313,27 @@ tests :: TestTree
 tests =
     testGroup "game state machine with secret arguments tests"
     [ checkPredicate "run a successful game trace"
-        (walletFundsChange w2 (Ada.toValue Ledger.minAdaTxOut <> Ada.adaValueOf 3 <> guessTokenVal)
+        (walletFundsChange w2 (Ada.adaValueOf 3 <> guessTokenVal)
         .&&. valueAtAddress (Scripts.validatorAddress $ G.typedValidator gameParam) (Ada.adaValueOf 5 ==)
-        .&&. walletFundsChange w1 (Ada.toValue (-Ledger.minAdaTxOut) <> Ada.adaValueOf (-8)))
+        .&&. walletFundsChange w1 (Ada.adaValueOf (-8)))
         successTrace
 
     , checkPredicate "run a 2nd successful game trace"
         (walletFundsChange w2 (Ada.adaValueOf 3)
         .&&. valueAtAddress (Scripts.validatorAddress $ G.typedValidator gameParam) (Ada.adaValueOf 0 ==)
-        .&&. walletFundsChange w1 (Ada.toValue (-Ledger.minAdaTxOut) <> Ada.adaValueOf (-8))
-        .&&. walletFundsChange w3 (Ada.toValue Ledger.minAdaTxOut <> Ada.adaValueOf 5 <> guessTokenVal))
+        .&&. walletFundsChange w1 (Ada.adaValueOf (-8))
+        .&&. walletFundsChange w3 (Ada.adaValueOf 5 <> guessTokenVal))
         successTrace2
 
     , checkPredicate "run a successful game trace where we try to leave 1 Ada in the script address"
-        (walletFundsChange w1 (Ada.toValue (-Ledger.minAdaTxOut) <> guessTokenVal)
-        .&&. valueAtAddress (Scripts.validatorAddress $ G.typedValidator gameParam) (Ada.toValue Ledger.minAdaTxOut ==))
+        (walletFundsChange w1 (guessTokenVal)
+        .&&. valueAtAddress (Scripts.validatorAddress $ G.typedValidator gameParam) (Ada.toValue 1344798 ==))
         traceLeaveOneAdaInScript
 
     , checkPredicate "run a failed trace"
-        (walletFundsChange w2 (Ada.toValue Ledger.minAdaTxOut <> guessTokenVal)
+        (walletFundsChange w2 (Ada.toValue 1344798 <> guessTokenVal)
         .&&. valueAtAddress (Scripts.validatorAddress $ G.typedValidator gameParam) (Ada.adaValueOf 8 ==)
-        .&&. walletFundsChange w1 (Ada.toValue (-Ledger.minAdaTxOut) <> Ada.adaValueOf (-8)))
+        .&&. walletFundsChange w1 (Ada.toValue (-1344798) <> Ada.adaValueOf (-8)))
         failTrace
 
     , goldenPir "test/Spec/gameStateMachine.pir" $$(PlutusTx.compile [|| mkValidator ||])

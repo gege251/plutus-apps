@@ -357,7 +357,7 @@ checkMinAdaInTxOutputs t@Tx { txOutputs } = do
                 fromPlutusTxOut' txOut <&> \txOut' -> Ada.fromValue $ evaluateMinLovelaceOutput pparams txOut'
         if Ada.fromValue (txOutValue txOut) >= minAdaTxOut'
             then pure ()
-            else throwError $ ValueContainsLessThanMinAda t txOut
+            else throwError $ ValueContainsLessThanMinAda t txOut (Ada.toValue minAdaTxOut')
 
 -- | Check if the fees are paid exclusively in Ada.
 checkFeeIsAda :: ValidationMonad m => Tx -> m ()

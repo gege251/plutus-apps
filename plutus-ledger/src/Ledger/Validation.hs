@@ -41,7 +41,7 @@ module Ledger.Validation(
   previousBlocks,
   -- * Etc.
   emulatorGlobals,
-  getCardanoTxOutputsMissingCost
+  getCardanoTxOutputsMissingCosts
   ) where
 
 import Cardano.Api.Shelley (ShelleyBasedEra (ShelleyBasedEraAlonzo), alonzoGenesisDefaults, makeSignedTransaction,
@@ -91,8 +91,6 @@ import Plutus.V1.Ledger.Scripts qualified as P
 import PlutusTx.Builtins qualified as Builtins
 import PlutusTx.ErrorCodes (checkHasFailedError)
 import PlutusTx.Numeric qualified as P
-
-import Debug.Trace
 
 type CardanoLedgerError = Either P.ValidationErrorInPhase P.ToCardanoError
 
@@ -353,8 +351,8 @@ fromPaymentPrivateKey xprv txBody
   where
     notUsed = undefined -- hack so we can reuse code from cardano-api
 
-getCardanoTxOutputsMissingCost :: C.Api.ProtocolParameters -> P.CardanoTx -> [P.Value]
-getCardanoTxOutputsMissingCost pparams = trace "getCardanoTxOutputsMissingCost" . traceShowId . getCosts . Map.elems . P.getCardanoTxUnspentOutputsTx
+getCardanoTxOutputsMissingCosts :: C.Api.ProtocolParameters -> P.CardanoTx -> [P.Value]
+getCardanoTxOutputsMissingCosts pparams = getCosts . Map.elems . P.getCardanoTxUnspentOutputsTx
     where
         getCosts :: [P.TxOut] -> [P.Value]
         getCosts txOuts = txOuts <&> \txOut -> case fromPlutusTxOut' txOut of

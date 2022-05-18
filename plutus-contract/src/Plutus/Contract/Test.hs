@@ -89,7 +89,6 @@ import Control.Monad.Freer.Writer (Writer (..), tell)
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.Default (Default (..))
 import Data.Foldable (fold, traverse_)
-import Data.List as List
 import Data.Map qualified as M
 import Data.Maybe (fromJust, mapMaybe)
 import Data.OpenUnion
@@ -130,6 +129,7 @@ import Ledger.Slot (Slot)
 import Ledger.Value (Value)
 
 import Data.IORef
+import Plutus.Contract.Test.ContractModel.MissingLovelace (calculateDelta)
 import Plutus.Contract.Test.Coverage
 import Plutus.Contract.Trace as X
 import Plutus.Trace.Emulator (EmulatorConfig (..), EmulatorTrace, runEmulatorStream)
@@ -570,21 +570,8 @@ walletFundsChangeImpl exact w dlt' = TracePredicate $
     flip postMapM (L.generalize $ (,,) <$> Folds.walletFunds w <*> Folds.walletFees w <*> Folds.walletAdjustedTxEvents) $ \(finalValue', fees, txOutCosts) -> do
         dist <- ask @InitialDistribution
         let initialValue = fold (dist ^. at w)
-            dlt'' = dlt' P.- txOutWalletCost
-            txOutWalletCost = case List.uncons $ reverse $ filter ((== w) . fst) txOutCosts of
-              Just ((_, vs), _) | dlt' /= P.zero -> Ada.toValue $ sum $ map Ada.fromValue vs
-              _                                  -> P.zero
             finalValue = finalValue' P.+ if exact then mempty else fees
-            possibleTxOutCost = P.zero P.- (finalValue P.- initialValue P.- dlt'')
-            walletsDiffTxOutCost = case List.uncons $ reverse $ filter ((== w) . fst) txOutCosts of
-              Just ((_, vs), _) ->
-                let txOutCost = sum $ map Ada.fromValue vs
-                    deltas = map (P.abs . (flip (P.-) txOutCost) . sum . map Ada.fromValue . snd) $ filter (\(w', vs') -> (w' /= w) && (P.zero /= (sum $ map Ada.fromValue vs'))) txOutCosts
-                in if (P.abs $ Ada.fromValue possibleTxOutCost) `elem` deltas
-                  then possibleTxOutCost
-                  else P.zero
-              _ -> P.zero
-            dlt = dlt'' P.- walletsDiffTxOutCost
+            dlt = calculateDelta dlt' initialValue finalValue w txOutCosts
             result = initialValue P.+ dlt == finalValue
         unless result $ do
             tell @(Doc Void) $ vsep $
@@ -595,13 +582,6 @@ walletFundsChangeImpl exact w dlt' = TracePredicate $
                 then ["but they did not change"]
                 else ["but they changed by", " " <+> viaShow (finalValue P.- initialValue),
                       "a discrepancy of",    " " <+> viaShow (finalValue P.- initialValue P.- dlt)])
-                ++ [ "dlt': " <+> viaShow dlt'
-                    , "dlt: " <+> viaShow dlt
-                    , "possibleTxOutCost: " <+> viaShow possibleTxOutCost
-                    , "txOutWalletCost: " <+> viaShow txOutWalletCost
-                    , "txOutCosts: " <+> viaShow txOutCosts
-                    , "walletsDiffTxOutCost: " <+> viaShow walletsDiffTxOutCost
-                    ]
         pure result
 
 walletPaidFees :: Wallet -> Value -> TracePredicate

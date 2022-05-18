@@ -52,7 +52,7 @@ import Ledger (POSIXTime, POSIXTimeRange, PaymentPubKeyHash, Slot, SlotRange)
 import Ledger.Constraints.OffChain (UnbalancedTx, adjustUnbalancedTx, unBalancedTxTx)
 import Ledger.TimeSlot qualified as TimeSlot
 import Ledger.Tx (CardanoTx (EmulatorTx), ToCardanoError)
-import Ledger.Validation (getCardanoTxOutputsMissingCost)
+import Ledger.Validation (getCardanoTxOutputsMissingCosts)
 import Plutus.ChainIndex (ChainIndexQueryEffect)
 import Plutus.ChainIndex.Effects qualified as ChainIndexEff
 import Plutus.Contract.Effects (ChainIndexQuery (..), ChainIndexResponse (..))
@@ -269,5 +269,5 @@ handleAdjustUnbalancedTx ::
 handleAdjustUnbalancedTx pparams =
     RequestHandler $ \utx ->
         surroundDebug @Text "handleAdjustUnbalancedTx" $ do
-            logDebug $ AdjustingUnbalancedTx $ getCardanoTxOutputsMissingCost pparams (EmulatorTx $ unBalancedTxTx utx)
+            logDebug $ AdjustingUnbalancedTx $ getCardanoTxOutputsMissingCosts pparams (EmulatorTx $ unBalancedTxTx utx)
             pure $ adjustUnbalancedTx pparams utx

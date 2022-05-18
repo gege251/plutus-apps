@@ -27,11 +27,12 @@ import Ledger.Value (Value)
 import Wallet.API (WalletAPIError, defaultSlotRange, payToPaymentPublicKeyHash)
 import Wallet.Effects (WalletEffect)
 import Wallet.Emulator qualified as EM
+import Wallet.Emulator.LogMessages (RequestHandlerLogMsg)
 import Wallet.Emulator.MultiAgent (MultiAgentEffect, walletAction)
 import Wallet.Emulator.Wallet (Wallet)
 
 data EmulatedWalletAPI r where
-    LiftWallet :: Wallet -> Eff '[WalletEffect, Error WalletAPIError, LogMsg Text] a -> EmulatedWalletAPI a
+    LiftWallet :: Wallet -> Eff '[WalletEffect, Error WalletAPIError, LogMsg Text, LogMsg RequestHandlerLogMsg] a -> EmulatedWalletAPI a
 
 makeEffect ''EmulatedWalletAPI
 
@@ -59,6 +60,7 @@ handleEmulatedWalletAPI ::
 handleEmulatedWalletAPI = \case
     LiftWallet w action ->
         walletAction w
+            $ subsume
             $ subsume
             $ subsume
             $ subsume

@@ -169,7 +169,7 @@ instance ContractModel PrismModel where
               isIssued w %= doRevoke
             Issue w   -> do
               wait 1
-              -- withdraw mirror $ someTokenValue kyc 1
+              withdrawMinted mirror $ someTokenValue "kyc" 1
               isIssued w .= Issued
             Call w    -> do
               iss  <- (== Issued)   <$> viewContractState (isIssued w)

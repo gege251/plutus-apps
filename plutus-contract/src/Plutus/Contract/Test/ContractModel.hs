@@ -44,6 +44,7 @@ module Plutus.Contract.Test.ContractModel
     , burn
     , deposit
     , withdraw
+    , withdrawMinted
     , transfer
     , modifyContractState
     , createToken

@@ -30,8 +30,6 @@ import Test.QuickCheck hiding ((.&&.))
 import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
 
-import Debug.Trace
-
 -- | The token that we are auctioning off.
 theToken :: Value
 theToken = someTokenValue "token" 1
@@ -167,7 +165,6 @@ instance ContractModel AuctionModel where
             Init ebS pS -> do
                 endBidSlot .= ebS
                 payoutSlot .= pS
-                traceShowM $ "withdraw " ++ show w1 ++ " " ++ show theToken
                 withdraw w1 theToken
                 phase .= Bidding
                 wait 3
@@ -184,14 +181,11 @@ instance ContractModel AuctionModel where
                 case mwinningBid of
                   Just (oldBid, w') ->
                     when ((bid, w) `elem` bids && bid > oldBid) $ do
-                      traceShowM $ "withdraw " ++ show w ++ " " ++ show (Ada.lovelaceValueOf bid)
                       withdraw w $ Ada.lovelaceValueOf bid
-                      traceShowM $ "deposit " ++ show w' ++ " " ++ show (Ada.lovelaceValueOf oldBid)
                       deposit w' $ Ada.lovelaceValueOf oldBid
                       currentWinningBid .= Just (bid, w)
                   Nothing ->
                     when ((bid, w) `elem` bids) $ do
-                      traceShowM $ "withdraw " ++ show w ++ " " ++ show (Ada.lovelaceValueOf bid)
                       withdraw w $ Ada.lovelaceValueOf bid
                       currentWinningBid .= Just (bid, w)
                 wait 1
@@ -200,14 +194,10 @@ instance ContractModel AuctionModel where
                   mwinningBid <- viewContractState currentWinningBid
                   case mwinningBid of
                     Just (bid, winner) -> do
-                      traceShowM $ "deposit " ++ show winner ++ " " ++ show theToken
                       deposit winner theToken
-                      traceShowM $ "deposit " ++ show w1 ++ " " ++ show (Ada.lovelaceValueOf bid)
                       deposit w1 $ Ada.lovelaceValueOf bid
 
-                    Nothing -> do
-                      traceShowM $ "deposit " ++ show w1 ++ " " ++ show theToken
-                      deposit w1 theToken
+                    Nothing -> deposit w1 theToken
                   wait 1
                   phase $= AuctionOver
 

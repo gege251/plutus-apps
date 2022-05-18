@@ -79,8 +79,6 @@ import Wallet.Emulator.LogMessages (RequestHandlerLogMsg,
                                     TxBalanceMsg (AddingCollateralInputsFor, AddingInputsFor, AddingPublicKeyOutputFor, BalancingUnbalancedTx, FinishedBalancing, NoCollateralInputsAdded, NoInputsAdded, NoOutputsAdded, SigningTx, SubmittingTx, ValidationFailed))
 import Wallet.Emulator.NodeClient (NodeClientState, emptyNodeClientState)
 
-import Debug.Trace
-
 newtype SigningProcess = SigningProcess {
     unSigningProcess :: forall effs. (Member (Error WAPI.WalletAPIError) effs) => [PaymentPubKeyHash] -> CardanoTx -> Eff effs CardanoTx
 }
@@ -430,8 +428,6 @@ handleBalanceTx utxo UnbalancedTx{unBalancedTxTx} = do
         balance = left PlutusTx.- right
         (neg, pos) = adjustBalanceWithMissingLovelace $ Value.split balance
 
-    traceShowM $ "before (neg, pos): " ++ show (Value.split balance)
-    traceShowM $ "after (neg, pos): " ++ show (neg, pos)
     tx' <- if Value.isZero pos
            then do
                logDebug NoOutputsAdded

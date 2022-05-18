@@ -50,7 +50,6 @@ module Wallet.Emulator.Folds (
     , mkTxLogs
     ) where
 
-import Cardano.Api.Shelley (ProtocolParameters)
 import Control.Applicative ((<|>))
 import Control.Foldl (Fold (Fold), FoldM (FoldM))
 import Control.Foldl qualified as L
@@ -85,7 +84,7 @@ import Prettyprinter.Render.Text (renderStrict)
 import Wallet.Emulator.Chain (ChainEvent (SlotAdd, TxnValidate, TxnValidationFail), _TxnValidate, _TxnValidationFail)
 import Wallet.Emulator.LogMessages (_AdjustingUnbalancedTx, _BalancingUnbalancedTx, _ValidationFailed)
 import Wallet.Emulator.MultiAgent (EmulatorEvent, EmulatorTimeEvent, chainEvent, eteEvent, instanceEvent,
-                                   userThreadEvent, walletClientEvent, walletEvent, walletEvent')
+                                   userThreadEvent, walletClientEvent, walletEvent')
 import Wallet.Emulator.NodeClient (_TxSubmit)
 import Wallet.Emulator.Wallet (Wallet, _RequestHandlerLog, _TxBalanceLog, mockWalletAddress)
 import Wallet.Rollup qualified as Rollup
