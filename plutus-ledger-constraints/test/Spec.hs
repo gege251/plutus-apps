@@ -29,6 +29,7 @@ import Ledger.Constraints.OffChain qualified as OC
 import Ledger.Credential (Credential (PubKeyCredential, ScriptCredential), StakingCredential (StakingHash))
 import Ledger.Crypto (PubKeyHash (PubKeyHash))
 import Ledger.Generators qualified as Gen
+import Ledger.ProtocolParameters ()
 import Ledger.Tx (Tx (txOutputs), TxOut (TxOut, txOutAddress))
 import Ledger.Typed.Scripts qualified as Scripts
 import Ledger.Value (CurrencySymbol, Value (Value))
@@ -157,7 +158,7 @@ testScriptInputs lookups txc = property $ do
             Ledger.checkValidInputs (toListOf (Ledger.inputs . Ledger.scriptTxIns)) tx
             idx <- Ledger.vctxIndex <$> ask
             pure (Nothing, idx)
-    case Ledger.runValidation valM (Ledger.ValidationCtx (Ledger.UtxoIndex (Ledger.toTxOut <$> Constraints.slTxOutputs lookups)) def) of
+    case Ledger.runValidation valM (Ledger.ValidationCtx (Ledger.UtxoIndex (Ledger.toTxOut <$> Constraints.slTxOutputs lookups)) def def) of
         ((Nothing, _), _) -> pure ()
         ((Just err, _), _) -> do
             Hedgehog.annotateShow err
