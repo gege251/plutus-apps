@@ -20,6 +20,7 @@ import Cardano.Protocol.Socket.Client qualified as Client
 import Cardano.Protocol.Socket.Mock.Client qualified as MockClient
 import Data.Map qualified as Map
 import Data.Monoid (Last (..), Sum (..))
+import Debug.Trace (trace)
 import Ledger (Address (..), Block, Slot (..), TxId (..))
 import Plutus.PAB.Core.ContractInstance.STM (BlockchainEnv (..), InstanceClientEnv (..), InstancesState,
                                              OpenTxOutProducedRequest (..), OpenTxOutSpentRequest (..),
@@ -128,7 +129,13 @@ processChainSyncEvent instancesState blockchainEnv event = do
           C.AllegraEraInCardanoMode -> processBlock instancesState header blockchainEnv transactions era
           C.MaryEraInCardanoMode    -> processBlock instancesState header blockchainEnv transactions era
           C.AlonzoEraInCardanoMode  -> processBlock instancesState header blockchainEnv transactions era
-    RollBackward chainPoint _ -> runRollback blockchainEnv chainPoint
+    RollBackward chainPoint _ -> do
+                                   result <- runRollback blockchainEnv chainPoint
+                                   case result of
+                                     Left e -> -- FIXME: Suppress rollback failures.
+                                               trace ("ROLLBACK FAILURE: " <> show e)
+                                                 $ Right <$> blockAndSlot blockchainEnv
+                                     _      -> pure result
 
 
 data SyncActionFailure
